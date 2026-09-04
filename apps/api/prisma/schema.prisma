@@ -1,0 +1,290 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  PLAYER
+  ADMIN
+}
+
+enum PlayerType {
+  REGULAR
+  GUEST
+}
+
+enum PlayerStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum MatchStatus {
+  OPEN_FOR_REGISTRATION
+  IN_PROGRESS
+  FINISHED
+  CANCELLED
+}
+
+enum Attendance {
+  GOING
+  NOT_GOING
+}
+
+enum TeamSide {
+  A
+  B
+}
+
+enum TeamGenerationMode {
+  ALGORITHM
+  MANUAL_ADJUSTMENT
+  MANUAL
+}
+
+enum Weekday {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
+enum PushProvider {
+  EXPO
+  FCM
+}
+
+enum DevicePlatform {
+  IOS
+  ANDROID
+}
+
+enum ReminderType {
+  REGISTRATION
+  FINAL
+}
+
+enum ReminderDeliveryStatus {
+  PENDING
+  DELIVERED
+  TRANSIENT_FAILURE
+  INVALID_TOKEN
+}
+
+model User {
+  id                   String   @id @default(uuid()) @db.Uuid
+  playerId             String   @unique @db.Uuid
+  authProviderId       String   @unique @db.VarChar(255)
+  role                 UserRole @default(PLAYER)
+  notificationsEnabled Boolean  @default(true)
+  createdAt            DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt            DateTime @updatedAt @db.Timestamptz(6)
+
+  player           Player       @relation("PlayerUser", fields: [playerId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  pushDevices      PushDevice[]
+  cancelledMatches Match[]      @relation("CancelledBy")
+}
+
+model Player {
+  id                String       @id @default(uuid()) @db.Uuid
+  name              String       @db.VarChar(120)
+  type              PlayerType
+  status            PlayerStatus @default(ACTIVE)
+  speed             Int          @db.SmallInt
+  endurance         Int          @db.SmallInt
+  defense           Int          @db.SmallInt
+  attack            Int          @db.SmallInt
+  technique         Int          @db.SmallInt
+  avatarStorageKey  String?      @db.VarChar(512)
+  avatarContentType String?      @db.VarChar(100)
+  avatarUpdatedAt   DateTime?    @db.Timestamptz(6)
+  createdAt         DateTime     @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime     @updatedAt @db.Timestamptz(6)
+
+  user             User?              @relation("PlayerUser")
+  participants     MatchParticipant[]
+  teamMemberships  TeamMembership[]
+  matchPlayerStats MatchPlayerStat[]
+
+  @@index([status, name])
+}
+
+model Sport {
+  id                    String   @id @default(uuid()) @db.Uuid
+  name                  String   @unique @db.VarChar(80)
+  teamsPerMatch         Int      @db.SmallInt
+  playersOnFieldPerTeam Int      @db.SmallInt
+  createdAt             DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime @updatedAt @db.Timestamptz(6)
+
+  schedules Schedule[]
+  matches   Match[]
+}
+
+model Schedule {
+  id                          String   @id @default(uuid()) @db.Uuid
+  weekday                     Weekday  @default(TUESDAY)
+  localStartTime              DateTime @db.Time(0)
+  timeZone                    String   @default("Europe/Prague") @db.VarChar(64)
+  enabled                     Boolean  @default(true)
+  sportId                     String   @db.Uuid
+  location                    String?  @db.VarChar(255)
+  generationHorizonDays       Int      @default(7)
+  registrationReminderMinutes Int      @default(2880)
+  finalReminderMinutes        Int      @default(180)
+  createdAt                   DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt                   DateTime @updatedAt @db.Timestamptz(6)
+
+  sport   Sport   @relation(fields: [sportId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  matches Match[]
+
+  @@index([enabled, weekday])
+}
+
+model Match {
+  id                   String              @id @default(uuid()) @db.Uuid
+  scheduleId           String?             @db.Uuid
+  sportId              String              @db.Uuid
+  startsAt             DateTime            @db.Timestamptz(6)
+  location             String?             @db.VarChar(255)
+  status               MatchStatus         @default(OPEN_FOR_REGISTRATION)
+  teamAScore           Int?
+  teamBScore           Int?
+  startedAt            DateTime?           @db.Timestamptz(6)
+  completedAt          DateTime?           @db.Timestamptz(6)
+  cancelledAt          DateTime?           @db.Timestamptz(6)
+  cancelledByUserId    String?             @db.Uuid
+  teamGenerationMode   TeamGenerationMode?
+  algorithmVersion     String?             @db.VarChar(64)
+  configurationVersion String?             @db.VarChar(64)
+  stateVersion         Int                 @default(0)
+  createdAt            DateTime            @default(now()) @db.Timestamptz(6)
+  updatedAt            DateTime            @updatedAt @db.Timestamptz(6)
+
+  schedule                Schedule?                    @relation(fields: [scheduleId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  sport                   Sport                        @relation(fields: [sportId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  cancelledBy             User?                        @relation("CancelledBy", fields: [cancelledByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  participants            MatchParticipant[]
+  teams                   Team[]
+  matchPlayerStats        MatchPlayerStat[]
+  completionIdempotencies MatchCompletionIdempotency[]
+  reminderDeliveries      MatchReminderDelivery[]
+
+  @@unique([scheduleId, startsAt])
+  @@index([status, startsAt])
+  @@index([sportId, startsAt])
+  @@index([scheduleId, startsAt])
+}
+
+model MatchParticipant {
+  matchId    String     @db.Uuid
+  playerId   String     @db.Uuid
+  attendance Attendance
+  createdAt  DateTime   @default(now()) @db.Timestamptz(6)
+  updatedAt  DateTime   @updatedAt @db.Timestamptz(6)
+
+  match  Match  @relation(fields: [matchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  player Player @relation(fields: [playerId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@id([matchId, playerId])
+  @@index([matchId, attendance])
+  @@index([playerId, matchId])
+}
+
+model Team {
+  id        String   @id @default(uuid()) @db.Uuid
+  matchId   String   @db.Uuid
+  side      TeamSide
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  match       Match            @relation(fields: [matchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  memberships TeamMembership[]
+
+  @@unique([matchId, side])
+  @@unique([id, matchId])
+}
+
+model TeamMembership {
+  matchId   String   @db.Uuid
+  playerId  String   @db.Uuid
+  teamId    String   @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  team   Team   @relation(fields: [teamId, matchId], references: [id, matchId], onDelete: Restrict, onUpdate: Cascade)
+
+  @@id([matchId, playerId])
+  @@index([teamId, matchId])
+}
+
+model MatchPlayerStat {
+  matchId   String   @db.Uuid
+  playerId  String   @db.Uuid
+  goals     Int
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  match  Match  @relation(fields: [matchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  player Player @relation(fields: [playerId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@id([matchId, playerId])
+  @@index([playerId, matchId])
+}
+
+model MatchCompletionIdempotency {
+  matchId        String   @db.Uuid
+  idempotencyKey String   @db.VarChar(255)
+  requestHash    String   @db.Char(64)
+  createdAt      DateTime @default(now()) @db.Timestamptz(6)
+
+  match Match @relation(fields: [matchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@id([matchId, idempotencyKey])
+  @@index([createdAt])
+}
+
+model PushDevice {
+  id            String         @id @default(uuid()) @db.Uuid
+  userId        String         @db.Uuid
+  provider      PushProvider
+  platform      DevicePlatform
+  pushToken     String         @db.Text
+  isActive      Boolean        @default(true)
+  invalidatedAt DateTime?      @db.Timestamptz(6)
+  lastSeenAt    DateTime       @default(now()) @db.Timestamptz(6)
+  deviceLabel   String?        @db.VarChar(120)
+  createdAt     DateTime       @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime       @updatedAt @db.Timestamptz(6)
+
+  user               User                    @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  reminderDeliveries MatchReminderDelivery[]
+
+  @@unique([provider, pushToken])
+  @@index([userId, isActive])
+}
+
+model MatchReminderDelivery {
+  matchId       String                 @db.Uuid
+  pushDeviceId  String                 @db.Uuid
+  reminderType  ReminderType
+  status        ReminderDeliveryStatus @default(PENDING)
+  claimToken    String?                @db.Uuid
+  attemptCount  Int                    @default(0)
+  lastAttemptAt DateTime?              @db.Timestamptz(6)
+  deliveredAt   DateTime?              @db.Timestamptz(6)
+  errorCode     String?                @db.VarChar(64)
+  createdAt     DateTime               @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime               @updatedAt @db.Timestamptz(6)
+
+  match      Match      @relation(fields: [matchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  pushDevice PushDevice @relation(fields: [pushDeviceId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@id([matchId, pushDeviceId, reminderType])
+  @@index([status, lastAttemptAt])
+  @@index([pushDeviceId, createdAt])
+}

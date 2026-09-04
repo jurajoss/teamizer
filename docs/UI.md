@@ -1,0 +1,274 @@
+# Teamizer — UI / UX
+
+## Product character
+
+Teamizer uses a modern, restrained visual language with a practical sports
+character. The interface is friendly and lightweight rather than aggressive or
+decorative. Strong hierarchy, direct language, and comfortable controls take
+priority over dense dashboards, novelty graphics, gradients, or cards nested
+inside cards.
+
+The implemented authentication, onboarding, home, Match, team, and scoring
+screens form one visual baseline. New mobile screens must reuse the semantic
+tokens and primitives in `packages/ui` plus the safe-area page layout in
+`apps/mobile/src/ui/app-screen.tsx`. A screen must not introduce a competing
+palette, spacing scale, button style, or form language.
+
+## Semantic visual system
+
+### Color
+
+The application is currently a light interface. Colors are named by purpose in
+`packages/ui/src/theme.ts`; components consume the semantic name rather than
+repeating a hex value.
+
+| Role | Token | Implemented value |
+|---|---|---|
+| App canvas | `colors.canvas` | warm neutral `#F4F7F4` |
+| Primary surface | `colors.surface` | white `#FFFFFF` |
+| Muted/strong surfaces | `surfaceMuted`, `surfaceStrong` | green-neutral hierarchy |
+| Primary text | `colors.ink` | deep green-black `#14251C` |
+| Secondary text | `inkMuted`, `inkSubtle` | lower-emphasis copy |
+| Brand/action | `colors.brand` | field green `#176B4D` |
+| Brand interaction | `brandPressed`, `brandSoft`, `focus` | pressed, tint, and focus states |
+| Boundaries | `border`, `borderStrong` | quiet structural separation |
+| Feedback | `error`, `success`, `info`, `warning` and matching `*Soft` tokens | semantic foreground/background pairs |
+| Team distinction | `teamA`/`teamASoft`, `teamB`/`teamBSoft` | teal and warm amber pairs |
+
+Team colors are reserved for identifying sides in team and scoring contexts.
+They must always be accompanied by the side name or another semantic label;
+color alone never communicates team membership or status.
+
+### Typography
+
+The native system font is used for reliability and platform familiarity. The
+shared `AppText` variants are:
+
+- `display`: high-impact screen or score-adjacent statement;
+- `title`: primary page title;
+- `heading`: section/card heading;
+- `body` and `bodyStrong`: normal content and emphasized actions/data;
+- `label`: form and row labels;
+- `caption`: supporting copy;
+- `eyebrow`: short uppercase context/status labels;
+- `score`: instant-read score display.
+
+Body copy remains at 16 px with a 23 px line height. Important text is made
+larger or heavier, not communicated through color alone.
+
+### Spacing, shape, and elevation
+
+- Spacing uses the shared 4, 8, 12, 16, 20, 24, 32, 40, and 48 scale.
+- Corner radii are 10, 14, and 20, with a pill value only for compact status.
+- Interactive controls have a minimum 48 pt target; primary buttons are 52 pt
+  high.
+- Shadows are quiet and reserved for a genuinely raised primary surface.
+- Borders separate rows and fields but do not box every piece of content.
+
+## Shared primitives
+
+`packages/ui` implements the reusable cross-screen layer:
+
+- `AppText` for the typography hierarchy and semantic text tones;
+- `BrandLockup` for the restrained pitch/team mark and wordmark;
+- `Button` with primary, secondary, ghost, and danger hierarchy plus busy and
+  disabled states;
+- `TextField` with visible label, focus state, supporting text, and inline error;
+- `FeedbackBanner` for error, success, information, and warning feedback with
+  both symbol and text;
+- `NumberStepper` for accessible bounded numeric input with 48 pt controls;
+- `StatusPill` for concise text-and-dot status presentation;
+- `Avatar` for a square-cropped Player image at shared small, medium, large,
+  and hero sizes, with deterministic one/two-letter initials fallback;
+- `Surface` for one-level card/list grouping;
+- semantic `colors`, `typography`, `spacing`, `radii`, `layout`, and `shadows`.
+
+`AppScreen` owns the app canvas, safe-area insets, phone/tablet page padding,
+scroll behavior, and a 760 px readable maximum width. Screens use these pieces
+directly and add only layout styles specific to their content.
+
+## Page and navigation conventions
+
+- Phone is the primary layout. Content uses 20 pt side padding and remains easy
+  to operate one-handed.
+- At 700 px and wider, side padding increases to 32 pt while content is capped
+  instead of stretched. Forms remain capped at 460 px.
+- Every route is safe-area-aware on all four edges and supports vertical
+  scrolling where content or text scaling can exceed the viewport.
+- Screen headers live in the page for the current foundation. The compact brand
+  sits at the leading edge and a low-emphasis account action at the trailing
+  edge where needed.
+- A page has one obvious primary action. Secondary actions use outlined or ghost
+  treatment and destructive actions are visually separated.
+- Navigation never exposes protected content while Firebase restoration or
+  Teamizer identity checks are running.
+
+## Implemented screen patterns
+
+### Sign-in
+
+Sign-in is a single focused column with the brand, a clear benefit statement,
+labelled email/password fields, semantic error feedback, and one primary
+action. It does not advertise unimplemented account creation, password reset,
+or additional authentication providers.
+
+### Onboarding
+
+Onboarding explains why the name and initial ratings are required. Name uses a
+normal labelled text field. The five 1–10 values use bounded steppers with a
+neutral default of five, avoiding a dense administrative grid and avoiding
+numeric-keyboard dismissal problems. Privacy guidance states that ratings are
+balancing inputs and are not part of the normal player profile. Role selection
+is not present.
+
+### Authenticated home
+
+The home is intentionally focused: branded header, an authoritative
+`IN_PROGRESS` Match before any future OPEN Match, caller-relative attendance,
+one player identity surface, semantic account/player status, and clear routes
+into the Match and statistics flows. Active Matches remain present regardless
+of their scheduled time. Overdue OPEN Matches are not promoted as upcoming and
+are not auto-cancelled. Loading, empty, and retry states use the same shared
+primitives.
+
+### Profile and Player administration
+
+The authenticated Profile route presents the permanent Player identity,
+avatar, ACTIVE/inactive state, editable display name, and a compact public
+finished-Match summary. A normal Player never sees balancing attributes. Photo
+actions use explicit Choose, Take, and Remove controls; the avatar itself is not
+a hidden or undersized action.
+
+The ADMIN Player list is a phone-first vertical identity list with avatar,
+regular/guest account-linkage language, ACTIVE/inactive status, lightweight
+name-prefix search, and simple status filters. Player detail keeps public name
+editing, the five ADMIN-only bounded rating steppers, avatar management, guest
+conversion, and status management in distinct sections. Deactivation is
+visually separated, requires confirmation, and explains that Player ID and
+history remain; there is no hard-delete affordance.
+
+Avatar-bearing identity rows always retain the textual Player name and guest or
+status label where relevant. The shared initials fallback is deterministic, so
+missing or failed images preserve both identification and layout.
+
+### Statistics and Player history
+
+The ranking is a phone-first vertical list rather than a compressed data table.
+Each row is one comfortable touch target with an explicit rank, Player identity,
+guest label when applicable, and the approved scannable metrics. Server order is
+preserved; the mobile app formats but never recalculates authoritative rank.
+
+Player detail uses the same in-page header, status pills, surfaces, and number
+hierarchy as the Match flow. A compact wrapping metric grid adapts from phone to
+tablet without fixed columns. Zero-Match win rate and goals per Match are shown
+as `N/A`, not zero.
+
+Finished-Match history lives within Player detail and uses load-more pagination.
+Every result shows text-labelled outcome, final score, both final teams,
+participating Players, and aggregate goal totals. Team lists stack on phone and
+form two columns from the 700 px tablet breakpoint. A secondary action opens the
+existing full FINISHED Match presentation, avoiding a competing result route.
+Ranking and history provide intentional loading, empty, error/retry, and success
+states.
+
+### Loading and recoverable errors
+
+Session restoration and identity checks render a centered branded state with a
+labelled activity indicator and explanatory text. Protected content is not
+mounted underneath. Recoverable failures use an error banner plus explicit
+retry and sign-out actions. Configuration failures use the same visual
+language. Feedback does not rely on color alone.
+
+## Forms and interaction
+
+- Labels remain visible when a field has content; placeholder text is only an
+  example.
+- Email uses email keyboard/autocomplete, password uses secure entry, and name
+  uses word capitalization with a 120-character limit.
+- Validation appears next to the affected flow and preserves entered values.
+- Busy actions retain their label, show progress, and become unavailable until
+  complete.
+- Pressed, focus, disabled, and error states are visually distinct.
+- Frequently used controls must remain at least 48 pt and use concise verbs.
+
+## Accessibility
+
+- Text and action colors use high-contrast foreground/background pairs.
+- Headers use semantic accessibility roles.
+- Buttons expose disabled/busy state; stepper controls have explicit increase
+  and decrease labels and announce the current value.
+- Feedback uses live regions and visible symbols plus text.
+- Status always includes a textual label, never just a colored dot.
+- Layouts scroll rather than clip under larger text, small screens, or landscape
+  height constraints.
+- Optional future photos require a textual name and initials fallback; an image
+  is never the only player identifier.
+
+## Implemented Match flows
+
+The implemented core Match flow follows these interaction requirements:
+
+- Registration shows date/time, location, GOING, NOT_GOING, unanswered, guests,
+  and one clear team-generation action while respecting authorization.
+- Team proposals show two labelled sides, players, balance information,
+  regenerate, manual adjustment, and a separated Start action. Regeneration
+  replaces the current client proposal; there is no proposal history.
+- An IN_PROGRESS Match shows immutable persisted teams and a primary `Start
+  scoring` action. It never implies scorekeeper ownership or transfer.
+- Scoring uses the `score` typography variant for instant readability. Team A
+  and B use their semantic color pairs plus labels. A large player row/card is
+  the primary `+1` target, current player goals are obvious, decrement is a
+  smaller secondary control, and Finish Match is safely separated from goal
+  entry. The shared medium Avatar sits inside the existing 80 pt row; the photo
+  is never a separate required tap target. Local goal entry never displays
+  network loading.
+- Local persistence failure blocks scoring with explicit error feedback.
+- Completion is confirmed as irreversible. A 409 completion conflict closes or
+  discards the losing local result as defined by the concurrency design.
+- Finished detail shows final teams, score, and aggregate player goals without
+  attributing individual goals to a team. Rankings follow `PRODUCT.md`.
+
+Every major screen supplies intentional loading, empty, error, and success
+states using the established primitives. Exceptions such as instant local goal
+entry follow the approved product behavior rather than introducing network
+feedback.
+
+## Match reminder entry
+
+Notification permission is requested at most once after authentication and is
+never required for onboarding or normal app use. A denied permission produces
+no blocking UI or repeated prompt. Match reminder taps validate the Match ID and
+open the existing protected Match route; session routing remains the access
+boundary. Automatically materialized Matches otherwise appear through the
+existing Home/upcoming-Match presentation.
+
+## ADMIN Match and Schedule management
+
+The authenticated Home shows a Match-management action only for an ADMIN. Its
+landing screen separates the two approved setup choices: a one-off Match and
+the singleton recurring Schedule. Route-level redirects keep the same screens
+out of normal PLAYER navigation; API authorization remains authoritative.
+
+One-off creation is a short form with a supported Sport selector, native
+date/time controls, Prague-time guidance, and an optional location. The mobile
+client submits calendar components without applying UTC offsets; the API owns
+timezone and DST validation. The iOS wheel uses an explicit visible light
+appearance with Cancel/Use actions; Android uses its native date/time dialogs,
+and web uses browser date/time inputs. A new form starts with tomorrow and
+18:00 visibly selected, while both values remain freely editable. Submission is
+single-flight, and success refreshes Home's upcoming query before opening the
+normal Match detail.
+
+Native date/time controls are supplied by the compiled
+`@react-native-community/datetimepicker` module declared in the Expo
+configuration. Adding the JavaScript package alone is not a fallback: iOS pods
+and the native iOS/Android development application must be rebuilt, because a
+Metro reload cannot add the component to an already installed binary.
+
+The recurring editor uses human weekday and Sport choices, a native time
+control, a visible enabled switch, and reminders expressed in minutes, hours,
+or days. It converts those reminders to the existing minute DTO without
+changing scheduler semantics. The screen explicitly explains that an already
+materialized Match keeps its current time, location, attendance, and lifecycle
+state. Manual generation invokes the existing idempotent Schedule operation;
+there is no calendar, bulk rescheduling, or multi-rule UI.

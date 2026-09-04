@@ -1,0 +1,43 @@
+{
+  "name": "@teamizer/api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "admin:provision": "node dist/commands/provision-admin.js",
+    "build": "nest build",
+    "dev": "nest start --watch",
+    "lint": "eslint . --max-warnings 0",
+    "prisma:generate": "prisma generate --schema prisma/schema.prisma",
+    "prisma:migrate:deploy": "prisma migrate deploy --schema prisma/schema.prisma",
+    "prisma:validate": "prisma validate --schema prisma/schema.prisma",
+    "sport:bootstrap": "node dist/commands/bootstrap-default-sport.js",
+    "start": "node dist/main.js",
+    "test": "vitest run --configLoader=runner",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@js-temporal/polyfill": "^0.5.1",
+    "@nestjs/common": "^11.1.17",
+    "@nestjs/config": "^4.0.2",
+    "@nestjs/core": "^11.1.17",
+    "@nestjs/platform-express": "^11.1.17",
+    "@prisma/client": "^6.19.3",
+    "@teamizer/algorithm": "workspace:*",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.15.1",
+    "firebase-admin": "^14.3.0",
+    "multer": "^2.3.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "sharp": "^0.35.4"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^11.0.10",
+    "@nestjs/testing": "^11.1.17",
+    "@types/express": "^5.0.5",
+    "@types/multer": "^2.2.0",
+    "@types/supertest": "^6.0.3",
+    "prisma": "^6.19.3",
+    "supertest": "^7.1.4"
+  }
+}

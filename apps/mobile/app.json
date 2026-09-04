@@ -1,0 +1,59 @@
+{
+  "expo": {
+    "name": "Teamizer",
+    "slug": "teamizer",
+    "version": "0.1.0",
+    "orientation": "default",
+    "scheme": "teamizer",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.syrovyj.teamizer"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": [
+      [
+        "expo-router",
+        {
+          "headers": {
+            "Cross-Origin-Embedder-Policy": "credentialless",
+            "Cross-Origin-Opener-Policy": "same-origin"
+          }
+        }
+      ],
+      "expo-sqlite",
+      "expo-notifications",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Teamizer to choose a Player photo.",
+          "cameraPermission": "Allow Teamizer to take a Player photo.",
+          "microphonePermission": false
+        }
+      ],
+      "@react-native-community/datetimepicker"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "headers": {
+          "Cross-Origin-Embedder-Policy": "credentialless",
+          "Cross-Origin-Opener-Policy": "same-origin"
+        }
+      },
+      "eas": {
+        "projectId": "3993809e-5e0e-4528-859c-c79c6eb7d9c0"
+      }
+    },
+    "owner": "syrovyj",
+    "android": {
+      "package": "com.syrovyj.teamizer"
+    }
+  }
+}

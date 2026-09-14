@@ -1,6 +1,7 @@
 import { Redirect, type Href } from 'expo-router';
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, StyleSheet, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import {
   AppText,
@@ -18,6 +19,7 @@ import { AppScreen } from '../src/ui/app-screen';
 import { FoundationScreen } from '../src/ui/foundation-screen';
 
 export default function SignInScreen() {
+  const { t } = useTranslation();
   const { state, signIn } = useSession();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -25,7 +27,7 @@ export default function SignInScreen() {
   const [message, setMessage] = useState<string | null>(null);
 
   if (state.status === 'RESTORING' || state.status === 'CHECKING_IDENTITY') {
-    return <FoundationScreen busy message="Restoring your session…" />;
+    return <FoundationScreen busy message={t('auth.restoring')} />;
   }
 
   if (state.status !== 'SIGNED_OUT') {
@@ -35,7 +37,7 @@ export default function SignInScreen() {
 
   const submit = async () => {
     if (!email.trim() || !password) {
-      setMessage('Enter both your email and password.');
+      setMessage(t('auth.missingCredentials'));
       return;
     }
 
@@ -45,9 +47,7 @@ export default function SignInScreen() {
     try {
       await signIn(email, password);
     } catch {
-      setMessage(
-        'Sign-in failed. Check your email and password, then try again.',
-      );
+      setMessage(t('auth.signInFailed'));
       setSubmitting(false);
     }
   };
@@ -63,11 +63,9 @@ export default function SignInScreen() {
             <BrandLockup />
             <View style={styles.headline}>
               <AppText accessibilityRole="header" variant="display">
-                Your game, better balanced.
+                {t('auth.signInTitle')}
               </AppText>
-              <AppText tone="muted">
-                Sign in to organize teams and keep every match moving.
-              </AppText>
+              <AppText tone="muted">{t('auth.signInText')}</AppText>
             </View>
           </View>
           <View style={styles.fields}>
@@ -77,9 +75,9 @@ export default function SignInScreen() {
               editable={!submitting}
               inputMode="email"
               keyboardType="email-address"
-              label="Email"
+              label={t('auth.email')}
               onChangeText={setEmail}
-              placeholder="you@example.com"
+              placeholder={t('auth.emailPlaceholder')}
               returnKeyType="next"
               value={email}
             />
@@ -87,10 +85,10 @@ export default function SignInScreen() {
               autoCapitalize="none"
               autoComplete="current-password"
               editable={!submitting}
-              label="Password"
+              label={t('auth.password')}
               onChangeText={setPassword}
               onSubmitEditing={() => void submit()}
-              placeholder="Enter your password"
+              placeholder={t('auth.passwordPlaceholder')}
               returnKeyType="go"
               secureTextEntry
               value={password}
@@ -99,11 +97,11 @@ export default function SignInScreen() {
           {message ? <FeedbackBanner tone="error" message={message} /> : null}
           <Button
             busy={submitting}
-            label={submitting ? 'Signing in…' : 'Sign in'}
+            label={submitting ? t('auth.signingIn') : t('auth.signIn')}
             onPress={() => void submit()}
           />
           <AppText style={styles.footnote} variant="caption" tone="subtle">
-            Use the email linked to your Teamizer account.
+            {t('auth.accountHint')}
           </AppText>
         </View>
       </AppScreen>

@@ -1,13 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Redirect, router, useLocalSearchParams } from 'expo-router';
-import type { Href } from 'expo-router';
+import { Redirect, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import {
   AppText,
   Avatar,
-  BrandLockup,
   Button,
   FeedbackBanner,
   NumberStepper,
@@ -22,11 +21,11 @@ import type {
   UpdateAdminPlayerInput,
 } from '../../../../src/api/contracts';
 import { matchQueryKeys } from '../../../../src/matches/match-query-keys';
+import { localizedErrorMessage } from '../../../../src/i18n/localized-error';
 import { AvatarManager } from '../../../../src/profiles/avatar-manager';
 import type { PreparedAvatar } from '../../../../src/profiles/avatar-picker';
 import {
   canAccessPlayerAdministration,
-  guestConversionErrorMessage,
   requiresDeactivationConfirmation,
 } from '../../../../src/profiles/player-admin';
 import { profileQueryKeys } from '../../../../src/profiles/profile-query-keys';
@@ -35,14 +34,14 @@ import { useSession } from '../../../../src/session/session-context';
 import { statisticsQueryKeys } from '../../../../src/statistics/statistics-query-keys';
 import { AppScreen } from '../../../../src/ui/app-screen';
 
-const attributeLabels = {
-  speed: 'Speed',
-  endurance: 'Endurance',
-  defense: 'Defense',
-  attack: 'Attack',
-  technique: 'Technique',
-} as const;
-type AttributeKey = keyof typeof attributeLabels;
+type AttributeKey = 'speed' | 'endurance' | 'defense' | 'attack' | 'technique';
+const attributeKeys: AttributeKey[] = [
+  'speed',
+  'endurance',
+  'defense',
+  'attack',
+  'technique',
+];
 const defaultAttributes: Record<AttributeKey, number> = {
   speed: 5,
   endurance: 5,
@@ -52,6 +51,7 @@ const defaultAttributes: Record<AttributeKey, number> = {
 };
 
 export default function AdminPlayerDetailRoute() {
+  const { t } = useTranslation();
   const parameters = useLocalSearchParams<{ playerId?: string | string[] }>();
   const playerId =
     typeof parameters.playerId === 'string' ? parameters.playerId : null;
@@ -100,7 +100,7 @@ export default function AdminPlayerDetailRoute() {
       apiClient.updateAdminPlayer(playerId ?? '', input),
     onSuccess: async (player) => {
       setConfirmingDeactivation(false);
-      setMessage('Player details have been updated.');
+      setMessage(t('adminPlayer.updated'));
       await publish(player);
       setNameOverride(null);
       setAttributesOverride(null);
@@ -110,7 +110,7 @@ export default function AdminPlayerDetailRoute() {
     mutationFn: (file: PreparedAvatar) =>
       apiClient.uploadAdminPlayerAvatar(playerId ?? '', file),
     onSuccess: async (player) => {
-      setMessage('Player photo has been updated.');
+      setMessage(t('adminPlayer.photoUpdated'));
       await publish(player);
     },
   });
@@ -120,7 +120,7 @@ export default function AdminPlayerDetailRoute() {
       return apiClient.getAdminPlayerDetail(playerId ?? '');
     },
     onSuccess: async (player) => {
-      setMessage('Player photo has been removed.');
+      setMessage(t('adminPlayer.photoRemoved'));
       await publish(player);
     },
   });
@@ -128,9 +128,7 @@ export default function AdminPlayerDetailRoute() {
     mutationFn: () => apiClient.convertGuest(playerId ?? '', authProviderId),
     onSuccess: async () => {
       setAuthProviderId('');
-      setMessage(
-        'Guest converted. The permanent Player identity and history were preserved.',
-      );
+      setMessage(t('adminPlayer.conversionSuccess'));
       const player = await apiClient.getAdminPlayerDetail(playerId ?? '');
       await publish(player);
     },
@@ -140,11 +138,11 @@ export default function AdminPlayerDetailRoute() {
     avatarMutation.error ??
     removeAvatarMutation.error ??
     conversionMutation.error;
-  const errorMessage = conversionMutation.error
-    ? guestConversionErrorMessage(conversionMutation.error)
-    : error instanceof Error
-      ? error.message
-      : 'The change could not be saved.';
+  const errorMessage = localizedErrorMessage(
+    error,
+    t,
+    'adminPlayer.saveFailed',
+  );
   const busy =
     updateMutation.isPending ||
     avatarMutation.isPending ||
@@ -159,40 +157,28 @@ export default function AdminPlayerDetailRoute() {
   }
 
   return (
-    <AppScreen scroll contentStyle={styles.screen}>
-      <View style={styles.topBar}>
-        <BrandLockup compact />
-        <Button
-          fullWidth={false}
-          label="Back"
-          onPress={() => returnToPlayers()}
-          variant="ghost"
-        />
-      </View>
+    <AppScreen scroll underHeader contentStyle={styles.screen}>
       {!playerId ? (
         <FeedbackBanner
           tone="error"
-          title="Player unavailable"
-          message="This administrative link is missing a valid Player ID."
+          title={t('adminPlayer.unavailable')}
+          message={t('adminPlayer.missingId')}
         />
       ) : null}
       {detailQuery.isPending && playerId ? (
         <Surface tone="muted" style={styles.stateCard}>
-          <AppText variant="heading">Loading Player…</AppText>
-          <AppText tone="muted">
-            Reading identity, history, and private ratings.
-          </AppText>
+          <AppText variant="heading">{t('playerDetail.loading')}</AppText>
         </Surface>
       ) : null}
       {detailQuery.isError ? (
         <View style={styles.stateCard}>
           <FeedbackBanner
             tone="error"
-            title="Player unavailable"
-            message="Check your connection and try again."
+            title={t('adminPlayer.unavailable')}
+            message={t('common.connectionRetry')}
           />
           <Button
-            label="Try again"
+            label={t('common.retry')}
             onPress={() => void detailQuery.refetch()}
             variant="secondary"
           />
@@ -204,8 +190,8 @@ export default function AdminPlayerDetailRoute() {
           {administrationDisabled ? (
             <FeedbackBanner
               tone="warning"
-              title="Administration is read-only"
-              message="Your administrator Player is inactive. Another active administrator must reactivate it before you can manage Players."
+              title={t('adminPlayer.readOnlyTitle')}
+              message={t('adminPlayer.readOnly')}
             />
           ) : null}
           {message ? <FeedbackBanner tone="success" message={message} /> : null}
@@ -216,14 +202,14 @@ export default function AdminPlayerDetailRoute() {
             <Surface style={styles.columnCard}>
               <View style={styles.sectionHeading}>
                 <AppText variant="eyebrow" tone="brand">
-                  PUBLIC IDENTITY
+                  {t('adminPlayer.publicIdentity').toUpperCase()}
                 </AppText>
-                <AppText variant="heading">Player details</AppText>
+                <AppText variant="heading">{t('adminPlayer.details')}</AppText>
               </View>
               <TextField
                 autoCapitalize="words"
                 editable={!busy && !administrationDisabled}
-                label="Player name"
+                label={t('profile.playerName')}
                 maxLength={120}
                 onChangeText={setNameOverride}
                 value={name}
@@ -231,38 +217,45 @@ export default function AdminPlayerDetailRoute() {
               <Button
                 busy={updateMutation.isPending}
                 disabled={!name.trim() || administrationDisabled}
-                label="Save Player details"
+                label={t('adminPlayer.saveDetails')}
                 onPress={() => updateMutation.mutate({ name, attributes })}
               />
             </Surface>
             <Surface style={styles.columnCard}>
               <View style={styles.sectionHeading}>
                 <AppText variant="eyebrow" tone="brand">
-                  ADMIN ONLY
+                  {t('adminPlayer.adminOnly').toUpperCase()}
                 </AppText>
-                <AppText variant="heading">Internal balancing ratings</AppText>
-                <AppText tone="muted">
-                  These 1–10 values affect future team generation and are never
-                  shown to normal Players.
-                </AppText>
+                <AppText variant="heading">{t('adminPlayer.ratings')}</AppText>
+                <AppText tone="muted">{t('adminPlayer.ratingsHint')}</AppText>
               </View>
               <View>
-                {(Object.keys(attributeLabels) as AttributeKey[]).map((key) => (
-                  <NumberStepper
-                    disabled={busy || administrationDisabled}
-                    key={key}
-                    label={attributeLabels[key]}
-                    maximum={10}
-                    minimum={1}
-                    onChange={(value) =>
-                      setAttributesOverride((current) => ({
-                        ...(current ?? attributes),
-                        [key]: value,
-                      }))
-                    }
-                    value={attributes[key]}
-                  />
-                ))}
+                {attributeKeys.map((key) => {
+                  const label = t(`attributes.${key}`);
+                  return (
+                    <NumberStepper
+                      decreaseLabel={t('attributes.decrease', { label })}
+                      disabled={busy || administrationDisabled}
+                      increaseLabel={t('attributes.increase', { label })}
+                      key={key}
+                      label={label}
+                      maximum={10}
+                      minimum={1}
+                      onChange={(value) =>
+                        setAttributesOverride((current) => ({
+                          ...(current ?? attributes),
+                          [key]: value,
+                        }))
+                      }
+                      value={attributes[key]}
+                      valueLabel={t('attributes.value', {
+                        label,
+                        value: attributes[key],
+                        maximum: 10,
+                      })}
+                    />
+                  );
+                })}
               </View>
             </Surface>
           </View>
@@ -283,21 +276,20 @@ export default function AdminPlayerDetailRoute() {
             <Surface tone="brand" style={styles.columnCard}>
               <View style={styles.sectionHeading}>
                 <AppText variant="eyebrow" tone="brand">
-                  GUEST CONVERSION
+                  {t('adminPlayer.conversion').toUpperCase()}
                 </AppText>
                 <AppText variant="heading">
-                  Link a provisioned Firebase identity
+                  {t('adminPlayer.linkIdentity')}
                 </AppText>
                 <AppText tone="muted">
-                  Conversion creates a PLAYER account for this exact Player ID.
-                  It does not create a Firebase account.
+                  {t('adminPlayer.conversionHint')}
                 </AppText>
               </View>
               <TextField
                 autoCapitalize="none"
                 autoCorrect={false}
                 editable={!busy && !administrationDisabled}
-                label="Firebase UID"
+                label={t('adminPlayer.firebaseUid')}
                 maxLength={255}
                 onChangeText={setAuthProviderId}
                 value={authProviderId}
@@ -307,7 +299,7 @@ export default function AdminPlayerDetailRoute() {
                 disabled={
                   !authProviderId.trim() || busy || administrationDisabled
                 }
-                label="Convert guest to regular Player"
+                label={t('adminPlayer.convert')}
                 onPress={() => conversionMutation.mutate()}
               />
             </Surface>
@@ -315,38 +307,34 @@ export default function AdminPlayerDetailRoute() {
           <Surface tone="muted" style={styles.destructiveArea}>
             <View style={styles.sectionHeading}>
               <AppText variant="eyebrow" tone="error">
-                PLAYER STATUS
+                {t('adminPlayer.playerStatus').toUpperCase()}
               </AppText>
               <AppText variant="heading">
                 {detailQuery.data.status === 'ACTIVE'
-                  ? 'Deactivate Player'
-                  : 'Reactivate Player'}
+                  ? t('adminPlayer.deactivate')
+                  : t('adminPlayer.reactivate')}
               </AppText>
-              <AppText tone="muted">
-                Deactivation prevents new Match actions but preserves the Player
-                ID, account link, avatar, attributes, and all history. Players
-                are never hard-deleted in MVP.
-              </AppText>
+              <AppText tone="muted">{t('adminPlayer.statusHint')}</AppText>
             </View>
             {detailQuery.data.status === 'ACTIVE' && confirmingDeactivation ? (
               <View style={styles.confirmation}>
                 <FeedbackBanner
                   tone="warning"
-                  title="Deactivate this Player?"
-                  message="Their historical Matches remain intact, but they cannot join or operate new Matches."
+                  title={t('adminPlayer.confirmTitle')}
+                  message={t('adminPlayer.confirmText')}
                 />
                 <View style={styles.actions}>
                   <Button
                     disabled={busy || administrationDisabled}
                     fullWidth={false}
-                    label="Keep active"
+                    label={t('adminPlayer.keepActive')}
                     onPress={() => setConfirmingDeactivation(false)}
                     variant="secondary"
                   />
                   <Button
                     busy={updateMutation.isPending}
                     fullWidth={false}
-                    label="Confirm deactivation"
+                    label={t('adminPlayer.confirmDeactivate')}
                     onPress={() =>
                       updateMutation.mutate({ status: 'INACTIVE' })
                     }
@@ -359,8 +347,8 @@ export default function AdminPlayerDetailRoute() {
                 disabled={busy || administrationDisabled}
                 label={
                   detailQuery.data.status === 'ACTIVE'
-                    ? 'Deactivate Player'
-                    : 'Reactivate Player'
+                    ? t('adminPlayer.deactivate')
+                    : t('adminPlayer.reactivate')
                 }
                 onPress={() =>
                   requiresDeactivationConfirmation(detailQuery.data.status)
@@ -380,48 +368,48 @@ export default function AdminPlayerDetailRoute() {
 }
 
 function AdminHeading({ player }: { player: AdminPlayerDetail }) {
+  const { t } = useTranslation();
   return (
     <View style={styles.heading}>
       <Avatar name={player.name} size="large" url={player.avatarUrl} />
       <View style={styles.headingCopy}>
         <View style={styles.actions}>
-          <StatusPill label="ADMIN VIEW" tone="info" />
+          <StatusPill label={t('status.adminView')} tone="info" />
           <StatusPill
-            label={player.status}
+            label={
+              player.status === 'ACTIVE'
+                ? t('status.active')
+                : t('status.inactive')
+            }
             tone={player.status === 'ACTIVE' ? 'success' : 'neutral'}
           />
-          <StatusPill label={player.type === 'GUEST' ? 'GUEST' : 'REGULAR'} />
+          <StatusPill
+            label={
+              player.type === 'GUEST' ? t('status.guest') : t('status.regular')
+            }
+          />
         </View>
         <AppText accessibilityRole="header" variant="title">
           {player.name}
         </AppText>
         <AppText tone="muted">
-          {player.statistics.matches} finished Matches ·{' '}
-          {player.statistics.goals} goals
+          {t('adminPlayer.summary', {
+            matches: player.statistics.matches,
+            goals: player.statistics.goals,
+          })}
         </AppText>
       </View>
     </View>
   );
 }
 
-function returnToPlayers(): void {
-  if (router.canGoBack()) router.back();
-  else router.replace('/admin/players' as Href);
-}
-
 const styles = StyleSheet.create({
-  screen: { gap: spacing.xxl },
-  topBar: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
+  screen: { gap: spacing.lg },
   heading: {
     alignItems: 'center',
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.lg,
-    marginTop: spacing.lg,
   },
   headingCopy: { flex: 1, gap: spacing.sm, minWidth: 220 },
   stateCard: { gap: spacing.md },

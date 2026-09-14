@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import { AppText, Avatar, Button, FeedbackBanner, spacing } from '@teamizer/ui';
 
@@ -18,6 +19,7 @@ export function AvatarManager({
   onRemove(): Promise<void>;
   onUpload(file: PreparedAvatar): Promise<void>;
 }) {
+  const { t } = useTranslation();
   const [message, setMessage] = useState<string | null>(null);
 
   const choose = async (source: 'CAMERA' | 'LIBRARY') => {
@@ -25,10 +27,8 @@ export function AvatarManager({
     try {
       const file = await prepareAvatar(source);
       if (file) await onUpload(file);
-    } catch (error) {
-      setMessage(
-        error instanceof Error ? error.message : 'The photo could not be used.',
-      );
+    } catch {
+      setMessage(t('profile.photoFailed'));
     }
   };
 
@@ -37,10 +37,8 @@ export function AvatarManager({
       <View style={styles.identity}>
         <Avatar name={name} size="hero" url={url} />
         <View style={styles.copy}>
-          <AppText variant="heading">Player photo</AppText>
-          <AppText tone="muted">
-            Photos are cropped to a square and stored with the Player identity.
-          </AppText>
+          <AppText variant="heading">{t('profile.photo')}</AppText>
+          <AppText tone="muted">{t('profile.photoHint')}</AppText>
         </View>
       </View>
       {message ? <FeedbackBanner tone="error" message={message} /> : null}
@@ -48,14 +46,14 @@ export function AvatarManager({
         <Button
           disabled={busy}
           fullWidth={false}
-          label="Choose photo"
+          label={t('profile.choosePhoto')}
           onPress={() => void choose('LIBRARY')}
           variant="secondary"
         />
         <Button
           disabled={busy}
           fullWidth={false}
-          label="Take photo"
+          label={t('profile.takePhoto')}
           onPress={() => void choose('CAMERA')}
           variant="secondary"
         />
@@ -63,7 +61,7 @@ export function AvatarManager({
           <Button
             disabled={busy}
             fullWidth={false}
-            label="Remove photo"
+            label={t('profile.removePhoto')}
             onPress={() => void onRemove()}
             variant="ghost"
           />

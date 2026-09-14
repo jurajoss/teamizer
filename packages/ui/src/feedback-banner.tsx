@@ -1,7 +1,8 @@
 import { StyleSheet, View } from 'react-native';
 
 import { AppText } from './app-text';
-import { colors, radii, spacing } from './theme';
+import { radii, spacing } from './theme';
+import { useTheme } from './theme-provider';
 
 export type FeedbackTone = 'error' | 'success' | 'info' | 'warning';
 
@@ -14,18 +15,35 @@ export function FeedbackBanner({
   title?: string;
   message: string;
 }) {
+  const { colors } = useTheme();
+  const toneColor = {
+    error: colors.danger,
+    success: colors.success,
+    info: colors.info,
+    warning: colors.warning,
+  }[tone];
+  const surfaceColor = {
+    error: colors.dangerSurface,
+    success: colors.successSurface,
+    info: colors.infoSurface,
+    warning: colors.warningSurface,
+  }[tone];
+
   return (
     <View
       accessibilityLiveRegion={tone === 'error' ? 'assertive' : 'polite'}
       accessibilityRole={tone === 'error' ? 'alert' : 'text'}
-      style={[styles.container, surfaces[tone]]}
+      style={[styles.container, { backgroundColor: surfaceColor }]}
     >
       <View
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"
-        style={[styles.symbol, symbols[tone]]}
+        style={[
+          styles.symbol,
+          { backgroundColor: colors.surface, borderColor: toneColor },
+        ]}
       >
-        <AppText variant="label" style={{ color: symbolColors[tone] }}>
+        <AppText variant="label" style={{ color: toneColor }}>
           {tone === 'error' ? '!' : tone === 'success' ? '✓' : 'i'}
         </AppText>
       </View>
@@ -49,7 +67,7 @@ const styles = StyleSheet.create({
   },
   symbol: {
     alignItems: 'center',
-    backgroundColor: colors.surface,
+    borderWidth: 1,
     borderRadius: 12,
     height: 24,
     justifyContent: 'center',
@@ -57,24 +75,3 @@ const styles = StyleSheet.create({
   },
   copy: { flex: 1, gap: spacing.xxs },
 });
-
-const surfaces = StyleSheet.create({
-  error: { backgroundColor: colors.errorSoft },
-  success: { backgroundColor: colors.successSoft },
-  info: { backgroundColor: colors.infoSoft },
-  warning: { backgroundColor: colors.warningSoft },
-});
-
-const symbols = StyleSheet.create({
-  error: { borderColor: colors.error, borderWidth: 1 },
-  success: { borderColor: colors.success, borderWidth: 1 },
-  info: { borderColor: colors.info, borderWidth: 1 },
-  warning: { borderColor: colors.warning, borderWidth: 1 },
-});
-
-const symbolColors = {
-  error: colors.error,
-  success: colors.success,
-  info: colors.info,
-  warning: colors.warning,
-} as const;

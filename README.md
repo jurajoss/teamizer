@@ -350,6 +350,166 @@ pnpm --filter @teamizer/mobile dev
 The API listens on `http://localhost:3000` by default. The Expo CLI prints the
 native and web launch options for the mobile shell.
 
+## Cloud Run TEST container
+
+The repository-root `Dockerfile` builds a production image containing only the
+compiled NestJS API, its production dependencies, the generated Prisma Client,
+the Prisma schema/migrations, and the compiled `@teamizer/algorithm` workspace
+dependency. It uses the repository's Node 22 line, pinned pnpm 8.15.9, and
+`pnpm-lock.yaml`. The dependency install is filtered to the workspace root, the
+API, and the API's workspace dependencies; it does not build or copy the mobile
+application.
+
+The production command is `node dist/main.js` (equivalently, after a local
+build, `pnpm --filter @teamizer/api start`). The image defaults `PORT` to 8080,
+while Cloud Run may provide its own value. Nest reads `process.env.PORT` and
+binds to `0.0.0.0`. The process connects Prisma before listening, and public
+`GET /health` remains the database-aware readiness endpoint.
+
+The image does not copy `.env` files or Firebase credential JSON. It does not
+run migrations in its entrypoint. Apply migrations as an explicit release step
+from an authorized environment that can reach the TEST database, before
+rolling out a revision:
+
+```bash
+DATABASE_URL="$TEST_DATABASE_URL" pnpm --filter @teamizer/api prisma:migrate:deploy
+```
+
+### Local container verification
+
+Start the existing development PostgreSQL service and apply its migrations:
+
+```bash
+docker compose up -d postgres
+pnpm prisma:migrate:deploy
+```
+
+Build from the repository root:
+
+```bash
+docker build --tag teamizer-api:cloud-run-test .
+```
+
+Run the compiled container against the Compose database. The example secrets
+are intentionally local-only values; do not reuse them in Cloud Run:
+
+```bash
+docker run --rm --name teamizer-api-cloud-run-test \
+  --add-host=host.docker.internal:host-gateway \
+  --publish 8080:8080 \
+  --env NODE_ENV=production \
+  --env PORT=8080 \
+  --env 'DATABASE_URL=postgresql://teamizer:teamizer@host.docker.internal:5432/teamizer?schema=public' \
+  --env FIREBASE_PROJECT_ID=replace-with-firebase-project-id \
+  --env PROPOSAL_RECEIPT_SECRET=local-proposal-receipt-secret-000000001 \
+  --env AVATAR_URL_SECRET=local-avatar-url-secret-0000000000001 \
+  --env SCHEDULER_ENABLED=false \
+  --env AVATAR_STORAGE_DIRECTORY=/tmp/teamizer-avatars \
+  --env AVATAR_PUBLIC_BASE_URL=http://localhost:8080 \
+  teamizer-api:cloud-run-test
+```
+
+In another shell, verify readiness:
+
+```bash
+curl --fail --show-error http://localhost:8080/health
+```
+
+The expected response is `{"status":"ok"}`. Docker Desktop resolves
+`host.docker.internal` directly; `--add-host` provides the equivalent mapping
+on Docker Engine versions that support `host-gateway`.
+
+### Cloud Run configuration
+
+Set these non-secret environment variables on the TEST service:
+
+- `NODE_ENV=production`
+- `FIREBASE_PROJECT_ID=<Firebase project ID>`
+- `SCHEDULER_ENABLED=false`
+- `AVATAR_STORAGE_DIRECTORY=/tmp/teamizer-avatars`
+- `AVATAR_PUBLIC_BASE_URL=<public HTTPS origin of the TEST API>`
+
+`PORT` is supplied by Cloud Run and does not need to be configured. The
+existing defaults remain available for `SCHEDULER_TICK_INTERVAL_MS`,
+`PUSH_PROVIDER_TIMEOUT_MS`, `AVATAR_MAX_UPLOAD_BYTES`, and
+`AVATAR_URL_TTL_SECONDS`.
+
+Provide these through Secret Manager as runtime environment variables:
+
+- `DATABASE_URL`
+- `PROPOSAL_RECEIPT_SECRET`
+- `AVATAR_URL_SECRET`
+- `EXPO_PUSH_ACCESS_TOKEN` only when authenticated Expo push delivery is used
+
+For Cloud SQL over its Unix socket, store the complete Prisma URL in the
+`DATABASE_URL` secret, for example
+`postgresql://USER:PASSWORD@localhost/DB?host=/cloudsql/PROJECT:REGION:INSTANCE&schema=public`.
+Percent-encode credential characters that are reserved in URLs.
+
+Firebase Admin continues to use Application Default Credentials. Do not set
+`GOOGLE_APPLICATION_CREDENTIALS` on Cloud Run and do not mount a service-account
+key. Attach a dedicated runtime service account with Cloud SQL Client, access
+to the referenced Secret Manager secrets, and permission to read Firebase
+Authentication users (for example Firebase Authentication Admin). Token
+verification and guest conversion then use that workload identity.
+
+The following is the recommended build-and-deploy template. Create the
+Artifact Registry repository and Secret Manager secrets first, replace every
+placeholder, and apply migrations separately as described above. This command
+is documentation only; it must not be run as part of application startup:
+
+```bash
+export PROJECT_ID='replace-with-gcp-project-id'
+export REGION='europe-west1'
+export ARTIFACT_REPOSITORY='teamizer'
+export IMAGE_TAG='test-001'
+export FIREBASE_PROJECT_ID='replace-with-firebase-project-id'
+export CLOUD_SQL_CONNECTION_NAME='PROJECT:REGION:INSTANCE'
+export RUNTIME_SERVICE_ACCOUNT='teamizer-api-test@PROJECT.iam.gserviceaccount.com'
+export API_ORIGIN='https://replace-with-test-api-origin'
+export IMAGE_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${ARTIFACT_REPOSITORY}/teamizer-api:${IMAGE_TAG}"
+
+gcloud builds submit \
+  --project="$PROJECT_ID" \
+  --tag="$IMAGE_URI" \
+  .
+
+gcloud run deploy teamizer-api-test \
+  --project="$PROJECT_ID" \
+  --region="$REGION" \
+  --platform=managed \
+  --image="$IMAGE_URI" \
+  --service-account="$RUNTIME_SERVICE_ACCOUNT" \
+  --allow-unauthenticated \
+  --port=8080 \
+  --min=0 \
+  --max=1 \
+  --set-cloudsql-instances="$CLOUD_SQL_CONNECTION_NAME" \
+  --set-env-vars="NODE_ENV=production,FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID},SCHEDULER_ENABLED=false,AVATAR_STORAGE_DIRECTORY=/tmp/teamizer-avatars,AVATAR_PUBLIC_BASE_URL=${API_ORIGIN}" \
+  --set-secrets="DATABASE_URL=teamizer-test-database-url:latest,PROPOSAL_RECEIPT_SECRET=teamizer-test-proposal-receipt-secret:latest,AVATAR_URL_SECRET=teamizer-test-avatar-url-secret:latest"
+```
+
+`--allow-unauthenticated` permits the mobile client and public health probe to
+reach Cloud Run; the API's existing Firebase bearer-token authorization still
+protects every non-public API route. `--max=1` limits inconsistent avatar reads
+during the temporary TEST phase but does not make local files durable.
+
+With `SCHEDULER_ENABLED=false`, scale-to-zero is safe for API traffic but no
+background Match materialization or reminder delivery occurs. An active ADMIN
+can manually materialize the next configured Match with authenticated
+`POST /admin/schedule/generate-matches`; that endpoint does not dispatch
+reminders. Later Cloud Scheduler work needs a dedicated Cloud Run IAM/OIDC
+protected endpoint or job that invokes both the existing due-materialization
+and reminder services. The current Firebase-user ADMIN endpoint is not a Cloud
+Scheduler workload-authentication boundary.
+
+The current `AvatarStorage` binding is `LocalAvatarStorage`. `/tmp` keeps the
+container writable for a temporary TEST deployment, but uploaded avatars are
+lost on instance restart or replacement and cannot be shared across replicas.
+The smallest production follow-up is a Google Cloud Storage implementation of
+the existing `AvatarStorage` interface plus configuration-based provider
+binding; the Player-facing API and database-owned storage keys need not change.
+
 ### Native development builds
 
 The Match-management date and time controls use the native

@@ -1,38 +1,38 @@
 import { useQuery } from '@tanstack/react-query';
-import { router } from 'expo-router';
-import type { Href } from 'expo-router';
-import { useState } from 'react';
+import { router, type Href } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import {
   AppText,
   Avatar,
-  BrandLockup,
   Button,
-  colors,
   FeedbackBanner,
   spacing,
   StatusPill,
   Surface,
+  useTheme,
 } from '@teamizer/ui';
 
-import { useSession } from '../../src/session/session-context';
 import {
   formatMatchDate,
   matchRouteFor,
   primaryUpcomingMatch,
 } from '../../src/matches/match-flow';
 import { matchQueryKeys } from '../../src/matches/match-query-keys';
+import { usePreferences } from '../../src/preferences/preferences-context';
 import { useAppServices } from '../../src/providers/app-services-context';
+import { useSession } from '../../src/session/session-context';
+import { statisticsRoute } from '../../src/statistics/statistics';
 import { AppScreen } from '../../src/ui/app-screen';
 import { FoundationScreen } from '../../src/ui/foundation-screen';
-import { statisticsRoute } from '../../src/statistics/statistics';
 
 export default function AuthenticatedHomeScreen() {
-  const { state, signOut } = useSession();
+  const { state } = useSession();
   const { apiClient } = useAppServices();
-  const [signingOut, setSigningOut] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const { t } = useTranslation();
+  const { language } = usePreferences();
+  const { colors } = useTheme();
   const upcomingQuery = useQuery({
     queryKey: matchQueryKeys.upcoming,
     queryFn: () => apiClient.getUpcomingMatches(),
@@ -40,207 +40,143 @@ export default function AuthenticatedHomeScreen() {
   });
 
   if (state.status !== 'AUTHENTICATED') {
-    return <FoundationScreen busy message="Checking your Teamizer profile…" />;
+    return <FoundationScreen busy message={t('home.checking')} />;
   }
 
   const roleLabel =
-    state.currentUser.user.role === 'ADMIN' ? 'Administrator' : 'Player';
-  const statusLabel =
-    state.currentUser.player.status === 'ACTIVE' ? 'Active' : 'Inactive';
-
-  const submitSignOut = async () => {
-    setSigningOut(true);
-    setMessage(null);
-
-    try {
-      await signOut();
-    } catch {
-      setMessage('Sign-out failed. Try again.');
-    } finally {
-      setSigningOut(false);
-    }
-  };
+    state.currentUser.user.role === 'ADMIN'
+      ? t('common.admin')
+      : t('common.player');
+  const active = state.currentUser.player.status === 'ACTIVE';
 
   return (
-    <AppScreen scroll contentStyle={styles.screen}>
-      <View style={styles.topBar}>
-        <BrandLockup compact />
-        <Button
-          busy={signingOut}
-          fullWidth={false}
-          label="Sign out"
-          onPress={() => void submitSignOut()}
-          variant="ghost"
-        />
-      </View>
-
+    <AppScreen scroll underHeader contentStyle={styles.screen}>
       <View style={styles.hero}>
-        <StatusPill label="TEAMIZER" />
-        <View style={styles.heroCopy}>
-          <AppText accessibilityRole="header" variant="display">
-            Your next Match.
-          </AppText>
-          <AppText tone="muted">
-            Welcome, {state.currentUser.player.name}. Respond, see who’s in, and
-            get ready to play.
-          </AppText>
-        </View>
+        <AppText accessibilityRole="header" variant="display">
+          {t('home.title')}
+        </AppText>
+        <AppText tone="muted">
+          {t('home.welcome', { name: state.currentUser.player.name })}
+        </AppText>
       </View>
 
       <UpcomingMatchSection
         error={upcomingQuery.isError}
+        language={language}
         loading={upcomingQuery.isPending}
         match={primaryUpcomingMatch(upcomingQuery.data ?? [])}
         onOpen={(matchId) => router.push(matchRouteFor(matchId))}
         onRetry={() => void upcomingQuery.refetch()}
       />
 
-      <Surface tone="brand" style={styles.statisticsCard}>
-        <View style={styles.cardHeading}>
+      <Surface tone="brand" padding="medium" style={styles.compactCard}>
+        <View style={styles.compactCopy}>
           <AppText variant="eyebrow" tone="brand">
-            PERFORMANCE
+            {t('home.performance').toUpperCase()}
           </AppText>
-          <AppText variant="heading">Statistics & ranking</AppText>
-          <AppText tone="muted">
-            Compare finished-Match results, then open any Player’s recent
-            history.
-          </AppText>
+          <AppText variant="heading">{t('home.statistics')}</AppText>
         </View>
         <Button
-          label="View player ranking"
+          fullWidth={false}
+          label={t('home.viewRanking')}
           onPress={() => router.push(statisticsRoute())}
           variant="secondary"
         />
       </Surface>
 
-      <Surface style={styles.profileCard}>
-        <View style={styles.profileHeading}>
+      <Surface padding="medium" style={styles.profileCard}>
+        <View style={styles.profileIdentity}>
           <Avatar
             name={state.currentUser.player.name}
-            size="large"
             url={state.currentUser.player.avatarUrl}
           />
-          <View style={styles.cardHeading}>
-            <AppText variant="eyebrow" tone="brand">
-              YOUR PLAYER
+          <View style={styles.profileCopy}>
+            <AppText variant="bodyStrong">
+              {state.currentUser.player.name}
             </AppText>
-            <AppText variant="heading">{state.currentUser.player.name}</AppText>
+            <AppText variant="caption" tone="muted">
+              {roleLabel}
+            </AppText>
           </View>
-        </View>
-        <View style={styles.detailRow}>
-          <AppText variant="caption" tone="muted">
-            Account role
-          </AppText>
-          <AppText variant="bodyStrong">{roleLabel}</AppText>
-        </View>
-        <View style={[styles.detailRow, styles.lastDetailRow]}>
-          <AppText variant="caption" tone="muted">
-            Player status
-          </AppText>
           <StatusPill
-            label={statusLabel.toUpperCase()}
-            tone={statusLabel === 'Active' ? 'success' : 'neutral'}
+            label={active ? t('status.active') : t('status.inactive')}
+            tone={active ? 'success' : 'neutral'}
           />
         </View>
-        <Button
-          label="Edit profile and photo"
-          onPress={() => router.push('/profile' as Href)}
-          variant="secondary"
-        />
+        <View style={[styles.profileAction, { borderTopColor: colors.border }]}>
+          <Button
+            label={t('home.editProfile')}
+            onPress={() => router.push('/profile' as Href)}
+            variant="secondary"
+          />
+        </View>
       </Surface>
-
-      {state.currentUser.user.role === 'ADMIN' ? (
-        <Surface tone="muted" style={styles.adminCard}>
-          <View style={styles.cardHeading}>
-            <AppText variant="eyebrow" tone="brand">
-              ADMINISTRATION
-            </AppText>
-            <AppText variant="heading">Administration</AppText>
-            <AppText tone="muted">
-              Set up Matches and the weekly Schedule, or manage Player
-              identities and status.
-            </AppText>
-          </View>
-          <View style={styles.adminActions}>
-            <Button
-              label="Manage Matches"
-              onPress={() => router.push('/admin/matches' as Href)}
-            />
-            <Button
-              label="Manage Players"
-              onPress={() => router.push('/admin/players' as Href)}
-              variant="secondary"
-            />
-          </View>
-        </Surface>
-      ) : null}
-
-      {message ? <FeedbackBanner tone="error" message={message} /> : null}
     </AppScreen>
   );
 }
 
 function UpcomingMatchSection({
   error,
+  language,
   loading,
   match,
   onOpen,
   onRetry,
 }: {
   error: boolean;
+  language: 'cs' | 'en';
   loading: boolean;
   match: ReturnType<typeof primaryUpcomingMatch>;
   onOpen(matchId: string): void;
   onRetry(): void;
 }) {
+  const { t } = useTranslation();
   if (loading) {
     return (
-      <Surface tone="muted" style={styles.matchState}>
-        <AppText variant="heading">Loading upcoming Match…</AppText>
-        <AppText tone="muted">
-          Checking the latest attendance and status.
-        </AppText>
+      <Surface tone="muted" padding="medium" style={styles.stateCard}>
+        <AppText variant="heading">{t('home.loadingMatch')}</AppText>
       </Surface>
     );
   }
-
   if (error) {
     return (
-      <View style={styles.matchState}>
+      <View style={styles.stateCard}>
         <FeedbackBanner
           tone="error"
-          title="Upcoming Match unavailable"
-          message="Check your connection and try again."
+          title={t('home.matchUnavailable')}
+          message={t('common.connectionRetry')}
         />
-        <Button label="Try again" onPress={onRetry} variant="secondary" />
+        <Button
+          label={t('common.retry')}
+          onPress={onRetry}
+          variant="secondary"
+        />
       </View>
     );
   }
-
   if (!match) {
     return (
-      <Surface tone="muted" style={styles.matchState}>
-        <AppText variant="heading">No upcoming Match</AppText>
-        <AppText tone="muted">
-          There is no open or in-progress Match scheduled right now.
-        </AppText>
+      <Surface tone="muted" padding="medium" style={styles.stateCard}>
+        <AppText variant="heading">{t('home.noMatch')}</AppText>
+        <AppText tone="muted">{t('home.noMatchHint')}</AppText>
       </Surface>
     );
   }
 
   const attendance =
     match.myAttendance === 'GOING'
-      ? 'GOING'
+      ? t('home.attendanceGoing')
       : match.myAttendance === 'NOT_GOING'
-        ? 'NOT GOING'
-        : 'UNANSWERED';
-
+        ? t('home.attendanceNotGoing')
+        : t('home.attendanceUnanswered');
   return (
     <Surface style={styles.upcomingCard}>
       <View style={styles.matchTopline}>
         <StatusPill
           label={
-            match.status === 'IN_PROGRESS' ? 'IN PROGRESS' : 'REGISTRATION OPEN'
+            match.status === 'IN_PROGRESS'
+              ? t('status.inProgress')
+              : t('status.open')
           }
           tone={match.status === 'IN_PROGRESS' ? 'info' : 'success'}
         />
@@ -251,7 +187,7 @@ function UpcomingMatchSection({
       <View style={styles.matchCopy}>
         <AppText variant="heading">{match.sport.name}</AppText>
         <AppText variant="bodyStrong">
-          {formatMatchDate(match.startsAt)}
+          {formatMatchDate(match.startsAt, language)}
         </AppText>
         {match.location ? (
           <AppText tone="muted">{match.location}</AppText>
@@ -259,7 +195,9 @@ function UpcomingMatchSection({
       </View>
       <Button
         label={
-          match.status === 'IN_PROGRESS' ? 'Open Match' : 'View attendance'
+          match.status === 'IN_PROGRESS'
+            ? t('home.openMatch')
+            : t('home.viewAttendance')
         }
         onPress={() => onOpen(match.id)}
       />
@@ -268,30 +206,10 @@ function UpcomingMatchSection({
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    gap: spacing.xxl,
-  },
-  topBar: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  hero: {
-    gap: spacing.lg,
-    marginTop: spacing.lg,
-  },
-  heroCopy: { gap: spacing.sm, maxWidth: 600 },
-  profileCard: { gap: 0 },
-  profileHeading: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: spacing.md,
-  },
-  adminCard: { gap: spacing.lg },
-  adminActions: { gap: spacing.sm },
-  statisticsCard: { gap: spacing.lg },
-  matchState: { gap: spacing.md },
-  upcomingCard: { gap: spacing.lg },
+  screen: { gap: spacing.lg },
+  hero: { gap: spacing.xs, maxWidth: 600 },
+  stateCard: { gap: spacing.sm },
+  upcomingCard: { gap: spacing.md },
   matchTopline: {
     alignItems: 'center',
     flexDirection: 'row',
@@ -299,18 +217,22 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     justifyContent: 'space-between',
   },
-  matchCopy: { gap: spacing.xs },
-  cardHeading: {
-    gap: spacing.xs,
-    paddingBottom: spacing.lg,
-  },
-  detailRow: {
+  matchCopy: { gap: spacing.xxs },
+  compactCard: {
     alignItems: 'center',
-    borderTopColor: colors.border,
-    borderTopWidth: 1,
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.md,
     justifyContent: 'space-between',
-    minHeight: 64,
   },
-  lastDetailRow: { paddingTop: spacing.xxs },
+  compactCopy: { flex: 1, gap: spacing.xxs, minWidth: 180 },
+  profileCard: { gap: spacing.md },
+  profileIdentity: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  profileCopy: { flex: 1, minWidth: 120 },
+  profileAction: { borderTopWidth: 1, paddingTop: spacing.md },
 });

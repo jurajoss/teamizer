@@ -4,7 +4,8 @@ import { StyleSheet, TextInput, View } from 'react-native';
 import type { StyleProp, ViewStyle } from 'react-native';
 
 import { AppText } from './app-text';
-import { colors, layout, radii, spacing, typography } from './theme';
+import { layout, radii, spacing, typography } from './theme';
+import { useTheme } from './theme-provider';
 
 export function TextField({
   label,
@@ -21,6 +22,7 @@ export function TextField({
   error?: string | null;
   containerStyle?: StyleProp<ViewStyle>;
 }) {
+  const { colors } = useTheme();
   const [focused, setFocused] = useState(false);
   const supportingText = error ?? hint;
 
@@ -39,12 +41,17 @@ export function TextField({
           setFocused(true);
           onFocus?.(event);
         }}
-        placeholderTextColor={colors.inkSubtle}
-        selectionColor={colors.brand}
+        placeholderTextColor={colors.textSubtle}
+        selectionColor={colors.accent}
         style={[
           styles.input,
-          focused && styles.focused,
-          Boolean(error) && styles.invalid,
+          {
+            backgroundColor: colors.surface,
+            borderColor: colors.borderStrong,
+            color: colors.textPrimary,
+          },
+          focused && { borderColor: colors.focus },
+          Boolean(error) && { borderColor: colors.danger },
           style,
         ]}
       />
@@ -60,21 +67,16 @@ export function TextField({
 const styles = StyleSheet.create({
   container: { gap: spacing.xs },
   input: {
-    backgroundColor: colors.surface,
-    borderColor: colors.borderStrong,
     borderRadius: radii.md,
     borderWidth: 1,
-    color: colors.ink,
     minHeight: layout.minimumTouchTarget + 4,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     ...typography.body,
   },
   focused: {
-    borderColor: colors.focus,
     borderWidth: 2,
     paddingHorizontal: spacing.md - 1,
     paddingVertical: spacing.sm - 1,
   },
-  invalid: { borderColor: colors.error },
 });

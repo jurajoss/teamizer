@@ -1,7 +1,8 @@
 import type { ComponentProps, ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { colors, radii, shadows, spacing } from './theme';
+import { radii, spacing } from './theme';
+import { useTheme } from './theme-provider';
 
 export function Surface({
   children,
@@ -14,10 +15,24 @@ export function Surface({
   tone?: 'default' | 'muted' | 'brand';
   padding?: 'none' | 'medium' | 'large';
 }) {
+  const { colors, shadows } = useTheme();
+  const backgroundColor =
+    tone === 'default'
+      ? colors.surface
+      : tone === 'muted'
+        ? colors.surfaceSubtle
+        : colors.accentSoft;
+
   return (
     <View
       {...props}
-      style={[styles.base, surfaces[tone], paddings[padding], style]}
+      style={[
+        styles.base,
+        { backgroundColor, borderColor: colors.border },
+        tone === 'default' && shadows.raised,
+        paddings[padding],
+        style,
+      ]}
     >
       {children}
     </View>
@@ -26,16 +41,9 @@ export function Surface({
 
 const styles = StyleSheet.create({
   base: {
-    borderColor: colors.border,
     borderRadius: radii.lg,
     borderWidth: 1,
   },
-});
-
-const surfaces = StyleSheet.create({
-  default: { backgroundColor: colors.surface, ...shadows.raised },
-  muted: { backgroundColor: colors.surfaceMuted },
-  brand: { backgroundColor: colors.brandSoft },
 });
 
 const paddings = StyleSheet.create({

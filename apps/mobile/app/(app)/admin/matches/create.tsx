@@ -2,20 +2,19 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Redirect, router } from 'expo-router';
 import { useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import {
   AppText,
-  BrandLockup,
   Button,
   FeedbackBanner,
   layout,
   spacing,
-  StatusPill,
   Surface,
   TextField,
 } from '@teamizer/ui';
 
-import { ApiClientError } from '../../../../src/api/authenticated-api-client';
+import { localizedErrorMessage } from '../../../../src/i18n/localized-error';
 import {
   canAccessMatchAdministration,
   canSubmitManualMatch,
@@ -36,6 +35,7 @@ import { AppScreen } from '../../../../src/ui/app-screen';
 import { DateTimeField } from '../../../../src/ui/date-time-field';
 
 export default function CreateManualMatchRoute() {
+  const { t } = useTranslation();
   const { state } = useSession();
   const { apiClient } = useAppServices();
   const queryClient = useQueryClient();
@@ -66,7 +66,21 @@ export default function CreateManualMatchRoute() {
 
   const submit = async () => {
     await runSingleSubmission(submissionGate, async () => {
-      const nextValidation = validateManualMatchDraft(draft);
+      const rawValidation = validateManualMatchDraft(draft);
+      const nextValidation: ManualMatchValidation = {
+        ...(rawValidation.sportId
+          ? { sportId: t('validation.chooseSport') }
+          : {}),
+        ...(rawValidation.localDate
+          ? { localDate: t('validation.chooseDate') }
+          : {}),
+        ...(rawValidation.localStartTime
+          ? { localStartTime: t('validation.chooseTime') }
+          : {}),
+        ...(rawValidation.location
+          ? { location: t('validation.locationLength') }
+          : {}),
+      };
       setValidation(nextValidation);
       setErrorMessage(null);
       if (
@@ -87,52 +101,32 @@ export default function CreateManualMatchRoute() {
         await refreshUpcomingMatchesAfterCreation(queryClient);
         router.replace(matchRouteFor(match.id));
       } catch (error) {
-        setErrorMessage(
-          error instanceof ApiClientError
-            ? error.message
-            : 'The Match could not be created. Try again.',
-        );
+        setErrorMessage(localizedErrorMessage(error, t, 'createMatch.failed'));
       }
     });
   };
 
   return (
-    <AppScreen scroll contentStyle={styles.screen}>
-      <View style={styles.topBar}>
-        <BrandLockup compact />
-        <Button
-          fullWidth={false}
-          label="Back"
-          onPress={() => router.back()}
-          variant="ghost"
-        />
-      </View>
-      <View style={styles.heading}>
-        <StatusPill label="ONE-OFF MATCH" tone="info" />
-        <AppText accessibilityRole="header" variant="title">
-          Create Match
-        </AppText>
-        <AppText tone="muted">
-          Registration opens as soon as the Match is created. Teams and
-          participants stay empty until the normal Match flow is used.
-        </AppText>
-      </View>
+    <AppScreen scroll underHeader contentStyle={styles.screen}>
+      <AppText tone="muted">{t('createMatch.intro')}</AppText>
 
       <View style={styles.form}>
         {sportsQuery.isPending ? (
           <Surface tone="muted" style={styles.stateCard}>
-            <AppText variant="heading">Loading Sports…</AppText>
+            <AppText variant="heading">
+              {t('createMatch.loadingSports')}
+            </AppText>
           </Surface>
         ) : null}
         {sportsQuery.isError ? (
           <View style={styles.stateCard}>
             <FeedbackBanner
               tone="error"
-              title="Sports unavailable"
-              message="Check your connection and try again."
+              title={t('createMatch.sportsUnavailable')}
+              message={t('common.connectionRetry')}
             />
             <Button
-              label="Try again"
+              label={t('common.retry')}
               onPress={() => void sportsQuery.refetch()}
               variant="secondary"
             />
@@ -141,13 +135,13 @@ export default function CreateManualMatchRoute() {
         {sportsQuery.data?.length === 0 ? (
           <FeedbackBanner
             tone="warning"
-            title="No supported Sport"
-            message="Bootstrap the default Football Sport before creating a Match."
+            title={t('createMatch.noSport')}
+            message={t('createMatch.noSportHint')}
           />
         ) : null}
         {sportsQuery.data && sportsQuery.data.length > 0 ? (
           <Surface style={styles.section}>
-            <AppText variant="heading">Sport</AppText>
+            <AppText variant="heading">{t('createMatch.sport')}</AppText>
             <View style={styles.choiceRow}>
               {sportsQuery.data.map((sport) => (
                 <Button
@@ -175,10 +169,10 @@ export default function CreateManualMatchRoute() {
         ) : null}
 
         <Surface style={styles.section}>
-          <AppText variant="heading">When</AppText>
+          <AppText variant="heading">{t('createMatch.when')}</AppText>
           <DateTimeField
             error={validation.localDate}
-            label="Date"
+            label={t('createMatch.date')}
             minimumDate={new Date()}
             mode="date"
             onChange={(localDate) =>
@@ -188,8 +182,8 @@ export default function CreateManualMatchRoute() {
           />
           <DateTimeField
             error={validation.localStartTime}
-            hint="Interpreted in Europe/Prague. DST edge times are validated by the API."
-            label="Local start time"
+            hint={t('createMatch.timeHint')}
+            label={t('createMatch.time')}
             mode="time"
             onChange={(localStartTime) =>
               setDraft((current) => ({ ...current, localStartTime }))
@@ -199,15 +193,15 @@ export default function CreateManualMatchRoute() {
         </Surface>
 
         <Surface style={styles.section}>
-          <AppText variant="heading">Where</AppText>
+          <AppText variant="heading">{t('createMatch.where')}</AppText>
           <TextField
             error={validation.location ?? null}
-            label="Location (optional)"
+            label={t('createMatch.location')}
             maxLength={255}
             onChangeText={(location) =>
               setDraft((current) => ({ ...current, location }))
             }
-            placeholder="e.g. Pitch A"
+            placeholder={t('createMatch.locationPlaceholder')}
             value={draft.location}
           />
         </Surface>
@@ -215,7 +209,7 @@ export default function CreateManualMatchRoute() {
         {errorMessage ? (
           <FeedbackBanner
             tone="error"
-            title="Match not created"
+            title={t('createMatch.failedTitle')}
             message={errorMessage}
           />
         ) : null}
@@ -225,7 +219,7 @@ export default function CreateManualMatchRoute() {
             !canSubmitManualMatch(draft, createMutation.isPending) ||
             !sportsQuery.data?.length
           }
-          label="Create Match"
+          label={t('nav.createMatch')}
           onPress={() => void submit()}
         />
       </View>
@@ -234,13 +228,7 @@ export default function CreateManualMatchRoute() {
 }
 
 const styles = StyleSheet.create({
-  screen: { gap: spacing.xxl },
-  topBar: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  heading: { gap: spacing.sm, marginTop: spacing.lg, maxWidth: 620 },
+  screen: { gap: spacing.lg },
   form: { gap: spacing.lg, maxWidth: layout.formMaxWidth, width: '100%' },
   section: { gap: spacing.md },
   stateCard: { gap: spacing.md },

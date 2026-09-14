@@ -1,12 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { router } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import {
   AppText,
   Avatar,
-  BrandLockup,
   Button,
   FeedbackBanner,
   radii,
@@ -14,24 +13,28 @@ import {
   StatusPill,
   Surface,
   TextField,
+  useTheme,
 } from '@teamizer/ui';
 
 import type { PlayerDetail } from '../../src/api/contracts';
+import { localizedErrorMessage } from '../../src/i18n/localized-error';
 import { profileQueryKeys } from '../../src/profiles/profile-query-keys';
 import { AvatarManager } from '../../src/profiles/avatar-manager';
 import type { PreparedAvatar } from '../../src/profiles/avatar-picker';
 import { asyncContentState } from '../../src/profiles/player-admin';
+import { usePreferences } from '../../src/preferences/preferences-context';
 import { useAppServices } from '../../src/providers/app-services-context';
 import { useSession } from '../../src/session/session-context';
+import { statisticsQueryKeys } from '../../src/statistics/statistics-query-keys';
 import {
   formatGoalsPerMatch,
   formatWinRate,
 } from '../../src/statistics/statistics';
-import { statisticsQueryKeys } from '../../src/statistics/statistics-query-keys';
 import { AppScreen } from '../../src/ui/app-screen';
 import { FoundationScreen } from '../../src/ui/foundation-screen';
 
 export default function ProfileRoute() {
+  const { t } = useTranslation();
   const { state, refreshCurrentUser } = useSession();
   const { apiClient } = useAppServices();
   const queryClient = useQueryClient();
@@ -58,7 +61,7 @@ export default function ProfileRoute() {
   const nameMutation = useMutation({
     mutationFn: () => apiClient.updateOwnPlayer(playerId ?? '', { name }),
     onSuccess: async (player) => {
-      setMessage('Your Player name has been updated.');
+      setMessage(t('profile.updatedName'));
       await publish(player);
       setNameOverride(null);
     },
@@ -67,7 +70,7 @@ export default function ProfileRoute() {
     mutationFn: (file: PreparedAvatar) =>
       apiClient.uploadOwnPlayerAvatar(playerId ?? '', file),
     onSuccess: async (player) => {
-      setMessage('Your Player photo has been updated.');
+      setMessage(t('profile.updatedPhoto'));
       await publish(player);
     },
   });
@@ -77,7 +80,7 @@ export default function ProfileRoute() {
       return apiClient.getPlayerDetail(playerId ?? '');
     },
     onSuccess: async (player) => {
-      setMessage('Your Player photo has been removed.');
+      setMessage(t('profile.removedPhoto'));
       await publish(player);
     },
   });
@@ -85,7 +88,7 @@ export default function ProfileRoute() {
     nameMutation.error ?? avatarMutation.error ?? removeAvatarMutation.error;
 
   if (state.status !== 'AUTHENTICATED') {
-    return <FoundationScreen busy message="Checking your Player profile…" />;
+    return <FoundationScreen busy message={t('home.checking')} />;
   }
   const contentState = asyncContentState(
     profileQuery.isPending,
@@ -94,34 +97,21 @@ export default function ProfileRoute() {
   );
 
   return (
-    <AppScreen scroll contentStyle={styles.screen}>
-      <View style={styles.topBar}>
-        <BrandLockup compact />
-        <Button
-          fullWidth={false}
-          label="Back"
-          onPress={() => returnHome()}
-          variant="ghost"
-        />
-      </View>
-
+    <AppScreen scroll underHeader contentStyle={styles.screen}>
       {contentState === 'LOADING' ? (
         <Surface tone="muted" style={styles.stateCard}>
-          <AppText variant="heading">Loading your profile…</AppText>
-          <AppText tone="muted">
-            Reading your Player identity and results.
-          </AppText>
+          <AppText variant="heading">{t('profile.loading')}</AppText>
         </Surface>
       ) : null}
       {contentState === 'ERROR' ? (
         <View style={styles.stateCard}>
           <FeedbackBanner
             tone="error"
-            title="Profile unavailable"
-            message="Check your connection and try again."
+            title={t('profile.unavailable')}
+            message={t('common.connectionRetry')}
           />
           <Button
-            label="Try again"
+            label={t('common.retry')}
             onPress={() => void profileQuery.refetch()}
             variant="secondary"
           />
@@ -130,8 +120,8 @@ export default function ProfileRoute() {
       {contentState === 'EMPTY' ? (
         <FeedbackBanner
           tone="error"
-          title="Profile unavailable"
-          message="The API returned no Player profile. Try again."
+          title={t('profile.unavailable')}
+          message={t('profile.missing')}
         />
       ) : null}
       {contentState === 'READY' && profileQuery.data ? (
@@ -141,28 +131,25 @@ export default function ProfileRoute() {
           {mutationError ? (
             <FeedbackBanner
               tone="error"
-              message={
-                mutationError instanceof Error
-                  ? mutationError.message
-                  : 'The profile change could not be saved.'
-              }
+              message={localizedErrorMessage(
+                mutationError,
+                t,
+                'profile.saveFailed',
+              )}
             />
           ) : null}
           <Surface style={styles.formCard}>
             <View style={styles.sectionHeading}>
               <AppText variant="eyebrow" tone="brand">
-                PUBLIC PROFILE
+                {t('profile.publicProfile').toUpperCase()}
               </AppText>
-              <AppText variant="heading">Display name</AppText>
-              <AppText tone="muted">
-                Your balancing ratings stay private and cannot be viewed or
-                edited here.
-              </AppText>
+              <AppText variant="heading">{t('profile.displayName')}</AppText>
+              <AppText tone="muted">{t('profile.privacy')}</AppText>
             </View>
             <TextField
               autoCapitalize="words"
               editable={!nameMutation.isPending}
-              label="Player name"
+              label={t('profile.playerName')}
               maxLength={120}
               onChangeText={setNameOverride}
               value={name}
@@ -170,7 +157,7 @@ export default function ProfileRoute() {
             <Button
               busy={nameMutation.isPending}
               disabled={!name.trim() || name.trim() === profileQuery.data.name}
-              label="Save name"
+              label={t('profile.saveName')}
               onPress={() => nameMutation.mutate()}
             />
           </Surface>
@@ -195,22 +182,24 @@ export default function ProfileRoute() {
 }
 
 function ProfileHeading({ player }: { player: PlayerDetail }) {
+  const { t } = useTranslation();
   return (
     <View style={styles.heading}>
       <Avatar name={player.name} size="hero" url={player.avatarUrl} />
       <View style={styles.headingCopy}>
         <View style={styles.pills}>
           <StatusPill
-            label={player.status === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE'}
+            label={
+              player.status === 'ACTIVE'
+                ? t('status.active')
+                : t('status.inactive')
+            }
             tone={player.status === 'ACTIVE' ? 'success' : 'neutral'}
           />
-          <StatusPill label="REGULAR PLAYER" tone="neutral" />
+          <StatusPill label={t('profile.regularPlayer')} tone="neutral" />
         </View>
         <AppText accessibilityRole="header" variant="title">
           {player.name}
-        </AppText>
-        <AppText tone="muted">
-          Your permanent Teamizer Player identity and finished-Match record.
         </AppText>
       </View>
     </View>
@@ -218,23 +207,32 @@ function ProfileHeading({ player }: { player: PlayerDetail }) {
 }
 
 function StatisticsCard({ player }: { player: PlayerDetail }) {
+  const { t } = useTranslation();
+  const { colors } = useTheme();
+  const { language } = usePreferences();
   const metrics = [
-    ['Matches', String(player.statistics.matches)],
-    ['Win rate', formatWinRate(player.statistics.winRate)],
-    ['Goals', String(player.statistics.goals)],
-    ['Goals / Match', formatGoalsPerMatch(player.statistics.goalsPerMatch)],
+    [t('common.matches'), String(player.statistics.matches)],
+    [t('common.winRate'), formatWinRate(player.statistics.winRate, language)],
+    [t('common.goals'), String(player.statistics.goals)],
+    [
+      t('common.goalsPerMatch'),
+      formatGoalsPerMatch(player.statistics.goalsPerMatch, language),
+    ],
   ] as const;
   return (
     <Surface tone="brand" style={styles.formCard}>
       <View style={styles.sectionHeading}>
         <AppText variant="eyebrow" tone="brand">
-          PERFORMANCE
+          {t('home.performance').toUpperCase()}
         </AppText>
-        <AppText variant="heading">Finished-Match summary</AppText>
+        <AppText variant="heading">{t('profile.summary')}</AppText>
       </View>
       <View style={styles.metrics}>
         {metrics.map(([label, value]) => (
-          <View key={label} style={styles.metric}>
+          <View
+            key={label}
+            style={[styles.metric, { backgroundColor: colors.surface }]}
+          >
             <AppText variant="heading">{value}</AppText>
             <AppText variant="caption" tone="muted">
               {label}
@@ -246,24 +244,13 @@ function StatisticsCard({ player }: { player: PlayerDetail }) {
   );
 }
 
-function returnHome(): void {
-  if (router.canGoBack()) router.back();
-  else router.replace('/home');
-}
-
 const styles = StyleSheet.create({
-  screen: { gap: spacing.xxl },
-  topBar: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
+  screen: { gap: spacing.lg },
   heading: {
     alignItems: 'center',
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.xl,
-    marginTop: spacing.lg,
   },
   headingCopy: { flex: 1, gap: spacing.sm, minWidth: 220 },
   pills: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
@@ -272,7 +259,6 @@ const styles = StyleSheet.create({
   sectionHeading: { gap: spacing.xs },
   metrics: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   metric: {
-    backgroundColor: 'rgba(255,255,255,0.64)',
     borderRadius: radii.md,
     flexBasis: 120,
     flexGrow: 1,

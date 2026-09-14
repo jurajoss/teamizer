@@ -2,8 +2,11 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import type { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { useMemo, useState } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
-import { AppText, Button, colors, radii, spacing } from '@teamizer/ui';
+import { AppText, Button, radii, spacing, useTheme } from '@teamizer/ui';
+
+import { usePreferences } from '../preferences/preferences-context';
 
 import {
   cancelNativePicker,
@@ -34,6 +37,9 @@ export function DateTimeField({
   hint,
   minimumDate,
 }: DateTimeFieldProps) {
+  const { colors, mode: themeMode } = useTheme();
+  const { language } = usePreferences();
+  const { t } = useTranslation();
   const initialValue = useMemo(
     () => value ?? defaultDateTimeFieldValue(mode, minimumDate),
     [minimumDate, mode, value],
@@ -57,9 +63,13 @@ export function DateTimeField({
     <View style={styles.field}>
       <AppText variant="label">{label}</AppText>
       <Button
-        accessibilityHint={`Opens the ${mode} picker`}
+        accessibilityHint={t(
+          mode === 'date' ? 'dateTime.openDate' : 'dateTime.openTime',
+        )}
         label={
-          value ? displayDateTimeFieldValue(value, mode) : `Choose ${mode}`
+          value
+            ? displayDateTimeFieldValue(value, mode, language)
+            : t(mode === 'date' ? 'dateTime.chooseDate' : 'dateTime.chooseTime')
         }
         onPress={() => {
           setDraft(value ?? defaultDateTimeFieldValue(mode, minimumDate));
@@ -68,17 +78,22 @@ export function DateTimeField({
         variant="secondary"
       />
       {open ? (
-        <View style={styles.pickerSurface}>
+        <View
+          style={[
+            styles.pickerSurface,
+            { backgroundColor: colors.surface, borderColor: colors.border },
+          ]}
+        >
           <DateTimePicker
             display={isIos ? 'spinner' : 'default'}
             mode={mode}
             onChange={handleChange}
             {...(isIos
               ? {
-                  accentColor: colors.brand,
+                  accentColor: colors.accent,
                   style: styles.iosPicker,
-                  textColor: colors.ink,
-                  themeVariant: 'light' as const,
+                  textColor: colors.textPrimary,
+                  themeVariant: themeMode,
                 }
               : {})}
             value={draft}
@@ -88,7 +103,7 @@ export function DateTimeField({
             <View style={styles.iosActions}>
               <Button
                 fullWidth={false}
-                label="Cancel"
+                label={t('common.cancel')}
                 onPress={() => {
                   const result = cancelNativePicker();
                   if (result.close) setOpen(false);
@@ -97,7 +112,9 @@ export function DateTimeField({
               />
               <Button
                 fullWidth={false}
-                label={`Use ${mode}`}
+                label={t(
+                  mode === 'date' ? 'dateTime.useDate' : 'dateTime.useTime',
+                )}
                 onPress={() => {
                   const result = confirmNativePicker(draft);
                   if (result.commit) onChange(result.commit);
@@ -126,8 +143,6 @@ const styles = StyleSheet.create({
   },
   iosPicker: { height: 216, width: '100%' },
   pickerSurface: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
     borderRadius: radii.md,
     borderWidth: 1,
     gap: spacing.sm,

@@ -2,7 +2,8 @@ import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import type { PressableProps, StyleProp, ViewStyle } from 'react-native';
 
 import { AppText } from './app-text';
-import { colors, layout, radii, spacing } from './theme';
+import { layout, radii, spacing } from './theme';
+import { useTheme } from './theme-provider';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
 
@@ -13,6 +14,7 @@ export function Button({
   disabled = false,
   fullWidth = true,
   style,
+  accessibilityState,
   ...props
 }: Omit<PressableProps, 'children' | 'style'> & {
   label: string;
@@ -21,21 +23,52 @@ export function Button({
   fullWidth?: boolean;
   style?: StyleProp<ViewStyle>;
 }) {
+  const { colors } = useTheme();
   const unavailable = disabled || busy;
   const foreground =
-    variant === 'primary' ? colors.onBrand : buttonText[variant];
+    variant === 'primary'
+      ? colors.accentContrast
+      : variant === 'secondary'
+        ? colors.accent
+        : variant === 'danger'
+          ? colors.danger
+          : colors.textSecondary;
+  const surface =
+    variant === 'primary'
+      ? { backgroundColor: colors.accent }
+      : variant === 'secondary'
+        ? {
+            backgroundColor: colors.surface,
+            borderColor: colors.borderStrong,
+            borderWidth: 1,
+          }
+        : variant === 'danger'
+          ? { backgroundColor: colors.dangerSurface }
+          : { backgroundColor: 'transparent' };
+  const pressedSurface =
+    variant === 'primary'
+      ? { backgroundColor: colors.accentPressed }
+      : variant === 'secondary'
+        ? { backgroundColor: colors.accentSoft }
+        : variant === 'ghost'
+          ? { backgroundColor: colors.surfaceSubtle }
+          : { opacity: 0.78 };
 
   return (
     <Pressable
       {...props}
       accessibilityRole="button"
-      accessibilityState={{ disabled: unavailable, busy }}
+      accessibilityState={{
+        ...accessibilityState,
+        disabled: unavailable,
+        busy,
+      }}
       disabled={unavailable}
       style={({ pressed }) => [
         styles.base,
-        buttonSurface[variant],
+        surface,
         fullWidth && styles.fullWidth,
-        pressed && !unavailable && pressedSurface[variant],
+        pressed && !unavailable && pressedSurface,
         unavailable && styles.disabled,
         style,
       ]}
@@ -54,13 +87,6 @@ export function Button({
   );
 }
 
-const buttonText = {
-  primary: colors.onBrand,
-  secondary: colors.brand,
-  ghost: colors.inkMuted,
-  danger: colors.error,
-} as const;
-
 const styles = StyleSheet.create({
   base: {
     alignItems: 'center',
@@ -78,22 +104,4 @@ const styles = StyleSheet.create({
   },
   fullWidth: { width: '100%' },
   disabled: { opacity: 0.5 },
-});
-
-const buttonSurface = StyleSheet.create({
-  primary: { backgroundColor: colors.brand },
-  secondary: {
-    backgroundColor: colors.surface,
-    borderColor: colors.borderStrong,
-    borderWidth: 1,
-  },
-  ghost: { backgroundColor: 'transparent' },
-  danger: { backgroundColor: colors.errorSoft },
-});
-
-const pressedSurface = StyleSheet.create({
-  primary: { backgroundColor: colors.brandPressed },
-  secondary: { backgroundColor: colors.brandSoft },
-  ghost: { backgroundColor: colors.surfaceMuted },
-  danger: { opacity: 0.78 },
 });

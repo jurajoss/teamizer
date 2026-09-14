@@ -18,22 +18,25 @@ palette, spacing scale, button style, or form language.
 
 ### Color
 
-The application is currently a light interface. Colors are named by purpose in
-`packages/ui/src/theme.ts`; components consume the semantic name rather than
-repeating a hex value.
+The application supports System, Light, and Dark appearance. System is the
+default and follows the current operating-system color scheme. The explicit
+choice is stored locally and does not require a Teamizer account or network
+request. `PreferencesProvider` resolves the preference and supplies the active
+`ThemeProvider` to the whole mobile tree.
 
-| Role | Token | Implemented value |
-|---|---|---|
-| App canvas | `colors.canvas` | warm neutral `#F4F7F4` |
-| Primary surface | `colors.surface` | white `#FFFFFF` |
-| Muted/strong surfaces | `surfaceMuted`, `surfaceStrong` | green-neutral hierarchy |
-| Primary text | `colors.ink` | deep green-black `#14251C` |
-| Secondary text | `inkMuted`, `inkSubtle` | lower-emphasis copy |
-| Brand/action | `colors.brand` | field green `#176B4D` |
-| Brand interaction | `brandPressed`, `brandSoft`, `focus` | pressed, tint, and focus states |
-| Boundaries | `border`, `borderStrong` | quiet structural separation |
-| Feedback | `error`, `success`, `info`, `warning` and matching `*Soft` tokens | semantic foreground/background pairs |
-| Team distinction | `teamA`/`teamASoft`, `teamB`/`teamBSoft` | teal and warm amber pairs |
+Colors are named by purpose in `packages/ui/src/theme.ts`; shared primitives and
+screens read the active theme through `useTheme()` rather than repeating color
+values or branching on dark mode.
+
+| Role | Semantic tokens |
+|---|---|
+| App canvas and hierarchy | `background`, `surface`, `surfaceSubtle`, `surfaceStrong` |
+| Text | `textPrimary`, `textSecondary`, `textSubtle` |
+| Brand/action | `accent`, `accentPressed`, `accentSoft`, `accentContrast`, `focus` |
+| Boundaries | `border`, `borderStrong` |
+| Feedback | `danger`, `success`, `warning`, `info` and matching `*Surface` tokens |
+| Team distinction | `teamAText`/`teamASurface`, `teamBText`/`teamBSurface` |
+| Modal treatment | `overlay` |
 
 Team colors are reserved for identifying sides in team and scoring contexts.
 They must always be accompanied by the side name or another semantic label;
@@ -81,7 +84,9 @@ larger or heavier, not communicated through color alone.
 - `Avatar` for a square-cropped Player image at shared small, medium, large,
   and hero sizes, with deterministic one/two-letter initials fallback;
 - `Surface` for one-level card/list grouping;
-- semantic `colors`, `typography`, `spacing`, `radii`, `layout`, and `shadows`.
+- `ThemeProvider`/`useTheme` for active semantic colors;
+- semantic light/dark themes, `typography`, `spacing`, `radii`, `layout`, and
+  `shadows`.
 
 `AppScreen` owns the app canvas, safe-area insets, phone/tablet page padding,
 scroll behavior, and a 760 px readable maximum width. Screens use these pieces
@@ -95,13 +100,49 @@ directly and add only layout styles specific to their content.
   instead of stretched. Forms remain capped at 460 px.
 - Every route is safe-area-aware on all four edges and supports vertical
   scrolling where content or text scaling can exceed the viewport.
-- Screen headers live in the page for the current foundation. The compact brand
-  sits at the leading edge and a low-emphasis account action at the trailing
-  edge where needed.
+- Authenticated routes use one shared Expo Router stack header. Home places the
+  compact Teamizer mark/wordmark at the leading edge and the current Player
+  avatar at the trailing edge, with no Back action. Inner routes place an
+  accessible Back action at the leading edge, a concise route title, and the
+  same avatar/account trigger at the trailing edge. Platform back gestures and
+  Android system Back remain available.
+- The stack is intentionally shallow: Home leads to Match flows, ranking/Player,
+  Profile, Settings, and ADMIN-only Administration. No bottom-tab system or
+  separate tablet navigation exists.
+- Breadcrumb chips are not navigation. The `TEAMIZER` Home chip and repeated
+  in-page brand/back rows are absent. Pills are reserved for meaningful domain
+  state or identity context.
 - A page has one obvious primary action. Secondary actions use outlined or ghost
   treatment and destructive actions are visually separated.
 - Navigation never exposes protected content while Firebase restoration or
   Teamizer identity checks are running.
+
+### Account menu and Settings
+
+The header avatar opens a compact, tablet-bounded modal account sheet. It uses
+the existing Player avatar or deterministic initials, display name, and useful
+role/status context without showing ratings or Firebase identifiers. My
+profile, Settings, and ADMIN-only Administration are normal navigation actions;
+Sign out is visually separated as the destructive action. Sign out does not
+occupy permanent Home header space.
+
+Settings is an authenticated route. Clear choice buttons offer System, Light,
+and Dark appearance plus Čeština and English language. The selected option
+remains explicit. Both choices persist through AsyncStorage. On the first run,
+language is inferred from the system locale when it is Czech and otherwise
+falls back to English.
+
+### Localization
+
+Mobile-facing copy lives in feature/domain-keyed i18next resources under
+`apps/mobile/src/i18n`. Supported languages are Czech (`cs`) and English (`en`).
+Components use translation keys instead of scattered bilingual conditionals.
+Stable API/domain error codes map to localized messages at the UI boundary;
+technical server messages and internal enum values are not presented as user
+copy. Date display uses the selected locale while Schedule payloads and the
+Europe/Prague time model remain unchanged. Native iOS camera/photo permission
+descriptions and the Android reminder-channel name also provide Czech and
+English copy through their platform-appropriate resources.
 
 ## Implemented screen patterns
 
@@ -123,13 +164,14 @@ is not present.
 
 ### Authenticated home
 
-The home is intentionally focused: branded header, an authoritative
+The home is intentionally focused: compact branded header, an authoritative
 `IN_PROGRESS` Match before any future OPEN Match, caller-relative attendance,
-one player identity surface, semantic account/player status, and clear routes
-into the Match and statistics flows. Active Matches remain present regardless
-of their scheduled time. Overdue OPEN Matches are not promoted as upcoming and
-are not auto-cancelled. Loading, empty, and retry states use the same shared
-primitives.
+one compact player identity surface, semantic account/player status, and a
+compact route into statistics. The primary Match remains prominent while
+routine explanatory copy and vertical gaps are reduced. Active Matches remain
+present regardless of their scheduled time. Overdue OPEN Matches are not
+promoted as upcoming and are not auto-cancelled. Loading, empty, and retry
+states use the same shared primitives.
 
 ### Profile and Player administration
 
@@ -158,7 +200,7 @@ Each row is one comfortable touch target with an explicit rank, Player identity,
 guest label when applicable, and the approved scannable metrics. Server order is
 preserved; the mobile app formats but never recalculates authoritative rank.
 
-Player detail uses the same in-page header, status pills, surfaces, and number
+Player detail uses the same stack header, status pills, surfaces, and number
 hierarchy as the Match flow. A compact wrapping metric grid adapts from phone to
 tablet without fixed columns. Zero-Match win rate and goals per Match are shown
 as `N/A`, not zero.
@@ -197,6 +239,8 @@ language. Feedback does not rely on color alone.
 - Headers use semantic accessibility roles.
 - Buttons expose disabled/busy state; stepper controls have explicit increase
   and decrease labels and announce the current value.
+- Back and account controls have explicit accessible labels and at least 48 pt
+  hit targets. The active Settings choice exposes selected state.
 - Feedback uses live regions and visible symbols plus text.
 - Status always includes a textual label, never just a colored dot.
 - Layouts scroll rather than clip under larger text, small screens, or landscape
@@ -216,8 +260,8 @@ The implemented core Match flow follows these interaction requirements:
 - An IN_PROGRESS Match shows immutable persisted teams and a primary `Start
   scoring` action. It never implies scorekeeper ownership or transfer.
 - Scoring uses the `score` typography variant for instant readability. Team A
-  and B use their semantic color pairs plus labels. A large player row/card is
-  the primary `+1` target, current player goals are obvious, decrement is a
+  and B use their semantic color pairs plus labels. A large Player row/card is
+  the primary `+1` target, current Player goals are obvious, decrement is a
   smaller secondary control, and Finish Match is safely separated from goal
   entry. The shared medium Avatar sits inside the existing 80 pt row; the photo
   is never a separate required tap target. Local goal entry never displays
@@ -244,17 +288,19 @@ existing Home/upcoming-Match presentation.
 
 ## ADMIN Match and Schedule management
 
-The authenticated Home shows a Match-management action only for an ADMIN. Its
-landing screen separates the two approved setup choices: a one-off Match and
-the singleton recurring Schedule. Route-level redirects keep the same screens
-out of normal PLAYER navigation; API authorization remains authoritative.
+Administration is available to an ADMIN from the account menu and is not
+duplicated as a prominent Home card. Its protected landing screen separates
+Manage Matches and Manage Players. The Match-management screen then separates
+the two approved setup choices: a one-off Match and the singleton recurring
+Schedule. Route-level redirects keep the same screens out of normal PLAYER
+navigation; API authorization remains authoritative.
 
 One-off creation is a short form with a supported Sport selector, native
 date/time controls, Prague-time guidance, and an optional location. The mobile
 client submits calendar components without applying UTC offsets; the API owns
-timezone and DST validation. The iOS wheel uses an explicit visible light
-appearance with Cancel/Use actions; Android uses its native date/time dialogs,
-and web uses browser date/time inputs. A new form starts with tomorrow and
+timezone and DST validation. The iOS wheel follows the active appearance and
+uses Cancel/Use actions; Android uses its native date/time dialogs, and web uses
+browser date/time inputs. A new form starts with tomorrow and
 18:00 visibly selected, while both values remain freely editable. Submission is
 single-flight, and success refreshes Home's upcoming query before opening the
 normal Match detail.

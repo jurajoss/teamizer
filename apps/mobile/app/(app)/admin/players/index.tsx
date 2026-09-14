@@ -3,26 +3,25 @@ import { Redirect, router } from 'expo-router';
 import type { Href } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import {
   AppText,
   Avatar,
-  BrandLockup,
   Button,
-  colors,
   FeedbackBanner,
   radii,
   spacing,
   StatusPill,
   Surface,
   TextField,
+  useTheme,
 } from '@teamizer/ui';
 
 import type { PlayersPage } from '../../../../src/api/contracts';
 import {
   asyncContentState,
   canAccessPlayerAdministration,
-  playerKindLabel,
 } from '../../../../src/profiles/player-admin';
 import { profileQueryKeys } from '../../../../src/profiles/profile-query-keys';
 import { useAppServices } from '../../../../src/providers/app-services-context';
@@ -32,6 +31,8 @@ import { AppScreen } from '../../../../src/ui/app-screen';
 const PAGE_SIZE = 25;
 
 export default function AdminPlayerListRoute() {
+  const { t } = useTranslation();
+  const { colors } = useTheme();
   const { state } = useSession();
   const { apiClient } = useAppServices();
   const [draftQuery, setDraftQuery] = useState('');
@@ -67,41 +68,22 @@ export default function AdminPlayerListRoute() {
   );
 
   return (
-    <AppScreen scroll contentStyle={styles.screen}>
-      <View style={styles.topBar}>
-        <BrandLockup compact />
-        <Button
-          fullWidth={false}
-          label="Back"
-          onPress={() => returnHome()}
-          variant="ghost"
-        />
-      </View>
-      <View style={styles.heading}>
-        <StatusPill label="ADMIN" tone="info" />
-        <AppText accessibilityRole="header" variant="title">
-          Player management
-        </AppText>
-        <AppText tone="muted">
-          Manage permanent Player identities, guests, status, photos, and
-          internal ratings.
-        </AppText>
-      </View>
+    <AppScreen scroll underHeader contentStyle={styles.screen}>
       <Surface tone="muted" style={styles.filters}>
         <TextField
           autoCapitalize="words"
-          label="Search by name"
+          label={t('admin.search')}
           maxLength={120}
           onChangeText={setDraftQuery}
           onSubmitEditing={() => setQuery(draftQuery.trim())}
-          placeholder="e.g. Alex"
+          placeholder={t('admin.searchPlaceholder')}
           returnKeyType="search"
           value={draftQuery}
         />
         <View style={styles.filterActions}>
           <Button
             fullWidth={false}
-            label="Search"
+            label={t('admin.searchAction')}
             onPress={() => setQuery(draftQuery.trim())}
           />
           {(['ALL', 'ACTIVE', 'INACTIVE'] as const).map((option) => (
@@ -110,10 +92,10 @@ export default function AdminPlayerListRoute() {
               key={option}
               label={
                 option === 'ALL'
-                  ? 'All'
+                  ? t('admin.all')
                   : option === 'ACTIVE'
-                    ? 'Active'
-                    : 'Inactive'
+                    ? t('common.active')
+                    : t('common.inactive')
               }
               onPress={() => setStatus(option)}
               variant={status === option ? 'secondary' : 'ghost'}
@@ -124,19 +106,18 @@ export default function AdminPlayerListRoute() {
 
       {contentState === 'LOADING' ? (
         <Surface tone="muted" style={styles.stateCard}>
-          <AppText variant="heading">Loading Players…</AppText>
-          <AppText tone="muted">Reading regular and guest identities.</AppText>
+          <AppText variant="heading">{t('admin.loadingPlayers')}</AppText>
         </Surface>
       ) : null}
       {contentState === 'ERROR' ? (
         <View style={styles.stateCard}>
           <FeedbackBanner
             tone="error"
-            title="Players unavailable"
-            message="Check your connection and try again."
+            title={t('admin.playersUnavailable')}
+            message={t('common.connectionRetry')}
           />
           <Button
-            label="Try again"
+            label={t('common.retry')}
             onPress={() => void playersQuery.refetch()}
             variant="secondary"
           />
@@ -144,36 +125,42 @@ export default function AdminPlayerListRoute() {
       ) : null}
       {contentState === 'EMPTY' ? (
         <Surface tone="muted" style={styles.stateCard}>
-          <AppText variant="heading">No matching Players</AppText>
-          <AppText tone="muted">Try another name or status.</AppText>
+          <AppText variant="heading">{t('admin.noPlayers')}</AppText>
+          <AppText tone="muted">{t('admin.noPlayersHint')}</AppText>
         </Surface>
       ) : null}
       {contentState === 'READY' ? (
-        <View
-          accessibilityLabel="Administrative Player list"
-          style={styles.list}
-        >
+        <View accessibilityLabel={t('admin.playerList')} style={styles.list}>
           {players.map((player) => (
             <Pressable
-              accessibilityHint="Opens administrative Player details"
-              accessibilityLabel={`Manage ${player.name}`}
+              accessibilityHint={t('admin.managePlayerHint')}
+              accessibilityLabel={t('admin.managePlayer', {
+                name: player.name,
+              })}
               accessibilityRole="button"
               key={player.id}
               onPress={() => router.push(`/admin/players/${player.id}` as Href)}
               style={({ pressed }) => [
                 styles.playerRow,
-                pressed && styles.playerRowPressed,
+                { backgroundColor: colors.surface, borderColor: colors.border },
+                pressed && { backgroundColor: colors.accentSoft },
               ]}
             >
               <Avatar name={player.name} url={player.avatarUrl} />
               <View style={styles.playerCopy}>
                 <AppText variant="bodyStrong">{player.name}</AppText>
                 <AppText variant="caption" tone="muted">
-                  {playerKindLabel(player.type)}
+                  {player.type === 'GUEST'
+                    ? t('admin.guestKind')
+                    : t('admin.regularKind')}
                 </AppText>
               </View>
               <StatusPill
-                label={player.status}
+                label={
+                  player.status === 'ACTIVE'
+                    ? t('status.active')
+                    : t('status.inactive')
+                }
                 tone={player.status === 'ACTIVE' ? 'success' : 'neutral'}
               />
               <AppText
@@ -188,7 +175,7 @@ export default function AdminPlayerListRoute() {
           {playersQuery.hasNextPage ? (
             <Button
               busy={playersQuery.isFetchingNextPage}
-              label="Load more Players"
+              label={t('ranking.loadMore')}
               onPress={() => void playersQuery.fetchNextPage()}
               variant="secondary"
             />
@@ -203,27 +190,14 @@ function flattenPlayers(pages: PlayersPage[] | undefined) {
   return pages?.flatMap(({ items }) => items) ?? [];
 }
 
-function returnHome(): void {
-  if (router.canGoBack()) router.back();
-  else router.replace('/home');
-}
-
 const styles = StyleSheet.create({
-  screen: { gap: spacing.xxl },
-  topBar: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  heading: { gap: spacing.sm, marginTop: spacing.lg, maxWidth: 620 },
+  screen: { gap: spacing.lg },
   filters: { gap: spacing.md },
   filterActions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
   stateCard: { gap: spacing.md },
   list: { gap: spacing.sm },
   playerRow: {
     alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
     borderRadius: radii.lg,
     borderWidth: 1,
     flexDirection: 'row',
@@ -232,6 +206,5 @@ const styles = StyleSheet.create({
     minHeight: 76,
     padding: spacing.md,
   },
-  playerRowPressed: { backgroundColor: colors.brandSoft },
   playerCopy: { flex: 1, minWidth: 140 },
 });

@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import {
   AppState,
@@ -8,19 +8,19 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import {
   AppText,
   Avatar,
-  BrandLockup,
   Button,
-  colors,
   FeedbackBanner,
   layout,
   radii,
   spacing,
   StatusPill,
   Surface,
+  useTheme,
 } from '@teamizer/ui';
 
 import { ApiClientError } from '../../../src/api/authenticated-api-client';
@@ -31,11 +31,9 @@ import {
   matchQueryKeys,
   publishMatchState,
 } from '../../../src/matches/match-query-keys';
-import {
-  leaveMatch,
-  matchViewportKey,
-} from '../../../src/navigation/match-navigation';
+import { matchViewportKey } from '../../../src/navigation/match-navigation';
 import { useAppServices } from '../../../src/providers/app-services-context';
+import { usePreferences } from '../../../src/preferences/preferences-context';
 import { useSession } from '../../../src/session/session-context';
 import { expoCompletionCrypto } from '../../../src/scoring/completion-crypto';
 import type { LocalMatchDraftV1 } from '../../../src/scoring/local-match-draft';
@@ -50,6 +48,7 @@ import { AppScreen } from '../../../src/ui/app-screen';
 import { FoundationScreen } from '../../../src/ui/foundation-screen';
 
 export default function MatchScoringRoute() {
+  const { t } = useTranslation();
   const parameters = useLocalSearchParams<{ matchId?: string | string[] }>();
   const matchId =
     typeof parameters.matchId === 'string' ? parameters.matchId : null;
@@ -139,8 +138,8 @@ export default function MatchScoringRoute() {
       <MatchPageFrame>
         <FeedbackBanner
           tone="error"
-          title="Match unavailable"
-          message="This Match link is missing a valid Match ID."
+          title={t('match.unavailable')}
+          message={t('match.missingId')}
         />
       </MatchPageFrame>
     );
@@ -150,10 +149,7 @@ export default function MatchScoringRoute() {
     return (
       <MatchPageFrame>
         <Surface tone="muted" style={styles.centeredState}>
-          <AppText variant="heading">Loading Match…</AppText>
-          <AppText tone="muted">
-            Checking final teams and any score saved on this device.
-          </AppText>
+          <AppText variant="heading">{t('match.loading')}</AppText>
         </Surface>
       </MatchPageFrame>
     );
@@ -167,22 +163,21 @@ export default function MatchScoringRoute() {
       <MatchPageFrame>
         <FeedbackBanner
           tone="error"
-          title={notFound ? 'Match unavailable' : 'Match could not load'}
-          message={
-            notFound
-              ? 'This Match does not exist or is no longer available.'
-              : 'Check your connection and try again. Your local score has not been changed.'
-          }
+          title={notFound ? t('match.unavailable') : t('match.loadFailed')}
+          message={notFound ? t('match.notFound') : t('common.connectionRetry')}
         />
         {!notFound ? (
-          <Button label="Try again" onPress={() => void matchQuery.refetch()} />
+          <Button
+            label={t('common.retry')}
+            onPress={() => void matchQuery.refetch()}
+          />
         ) : null}
       </MatchPageFrame>
     );
   }
 
   if (session.status !== 'AUTHENTICATED') {
-    return <FoundationScreen busy message="Checking your Teamizer profile…" />;
+    return <FoundationScreen busy message={t('auth.checking')} />;
   }
 
   if (matchQuery.data.status === 'OPEN_FOR_REGISTRATION') {
@@ -205,8 +200,8 @@ export default function MatchScoringRoute() {
         <MatchHeading match={matchQuery.data} />
         <FeedbackBanner
           tone="warning"
-          title="Match cancelled"
-          message="This Match is read-only. Attendance, teams, Start, and scoring are unavailable."
+          title={t('match.cancelled')}
+          message={t('match.cancelledHint')}
         />
       </MatchPageFrame>
     );
@@ -230,8 +225,8 @@ export default function MatchScoringRoute() {
         <FinalTeamRosters match={matchQuery.data} />
         <FeedbackBanner
           tone="warning"
-          title="Scoring unavailable"
-          message="Your Player is inactive. You can view the final teams, but Match scoring requires an active Player."
+          title={t('match.scoringUnavailable')}
+          message={t('match.inactiveScoring')}
         />
       </MatchPageFrame>
     );
@@ -244,10 +239,7 @@ export default function MatchScoringRoute() {
       >
         <MatchHeading match={matchQuery.data} />
         <Surface tone="muted" style={styles.centeredState}>
-          <AppText variant="heading">Checking local score…</AppText>
-          <AppText tone="muted">
-            Validating this account’s durable draft and final teams.
-          </AppText>
+          <AppText variant="heading">{t('match.checkingScore')}</AppText>
         </Surface>
       </MatchPageFrame>
     );
@@ -260,11 +252,7 @@ export default function MatchScoringRoute() {
       >
         <MatchHeading match={matchQuery.data} />
         <Surface tone="muted" style={styles.centeredState}>
-          <AppText variant="heading">Refreshing Match state…</AppText>
-          <AppText tone="muted">
-            Scoring controls are paused while the authoritative result is
-            checked.
-          </AppText>
+          <AppText variant="heading">{t('match.refreshing')}</AppText>
         </Surface>
       </MatchPageFrame>
     );
@@ -282,23 +270,21 @@ export default function MatchScoringRoute() {
 
 function MatchPageFrame({ children }: { children: React.ReactNode }) {
   return (
-    <AppScreen scroll contentStyle={styles.screen}>
-      <View style={styles.topBar}>
-        <BrandLockup compact />
-        <Button
-          fullWidth={false}
-          label="Back"
-          onPress={() => leaveMatch(router)}
-          variant="ghost"
-        />
-      </View>
+    <AppScreen scroll underHeader contentStyle={styles.screen}>
       {children}
     </AppScreen>
   );
 }
 
 function MatchHeading({ match }: { match: MatchDetail }) {
-  const statusLabel = match.status.replaceAll('_', ' ');
+  const { t } = useTranslation();
+  const { language } = usePreferences();
+  const statusLabel = {
+    OPEN_FOR_REGISTRATION: t('status.open'),
+    IN_PROGRESS: t('status.inProgress'),
+    FINISHED: t('status.finished'),
+    CANCELLED: t('status.cancelled'),
+  }[match.status];
 
   return (
     <View style={styles.heading}>
@@ -311,7 +297,7 @@ function MatchHeading({ match }: { match: MatchDetail }) {
           {match.sport.name}
         </AppText>
         <AppText tone="muted">
-          {formatMatchDate(match.startsAt)}
+          {formatMatchDate(match.startsAt, language)}
           {match.location ? ` · ${match.location}` : ''}
         </AppText>
       </View>
@@ -326,6 +312,7 @@ function ScoringStateView({
   controller: ScoringSessionController;
   state: ScoringSessionState;
 }) {
+  const { t } = useTranslation();
   if (state.status === 'LOADING') {
     return null;
   }
@@ -336,11 +323,11 @@ function ScoringStateView({
         <FinalTeamRosters match={state.match} />
         <FeedbackBanner
           tone="info"
-          title="Score on this device"
-          message="Scoring starts at 0–0 and stays only on this device until you finish the Match."
+          title={t('match.scoreOnDevice')}
+          message={t('match.scoreOnDeviceHint')}
         />
         <Button
-          label="Start scoring"
+          label={t('match.startScoring')}
           onPress={() => void controller.startScoring()}
         />
       </View>
@@ -365,13 +352,13 @@ function ScoringStateView({
           tone="error"
           title={
             state.status === 'CORRUPT_DRAFT'
-              ? 'Saved score is corrupt'
-              : 'Saved score is stale'
+              ? t('match.savedCorrupt')
+              : t('match.savedStale')
           }
-          message={`${state.message} Scoring stays blocked until you discard this unrecoverable local draft.`}
+          message={t('match.discardHint')}
         />
         <Button
-          label="Discard local draft"
+          label={t('match.discardDraft')}
           onPress={() => void controller.discardDraft()}
           variant="danger"
         />
@@ -384,11 +371,11 @@ function ScoringStateView({
       <View style={styles.sectionGap}>
         <FeedbackBanner
           tone="error"
-          title="Scoring is blocked"
-          message={state.message}
+          title={t('match.scoringBlocked')}
+          message={t('match.storageBlocked')}
         />
         <Button
-          label="Discard local draft"
+          label={t('match.discardDraft')}
           onPress={() => void controller.discardDraft()}
           variant="danger"
         />
@@ -399,9 +386,15 @@ function ScoringStateView({
   if (state.status === 'FINISHED') {
     return (
       <FinishedMatch
-        cleanupWarning={state.cleanupWarning}
+        cleanupWarning={state.cleanupWarning ? t('match.cleanupWarning') : null}
         match={state.match}
-        message={state.message}
+        message={
+          state.message?.startsWith('Another device')
+            ? t('match.finalConflict')
+            : state.message
+              ? t('match.finalSaved')
+              : null
+        }
       />
     );
   }
@@ -409,8 +402,8 @@ function ScoringStateView({
   return (
     <FeedbackBanner
       tone="warning"
-      title="Scoring unavailable"
-      message={state.message}
+      title={t('match.scoringUnavailable')}
+      message={t('match.cancelledHint')}
     />
   );
 }
@@ -426,6 +419,7 @@ function ActiveScoring({
   match: MatchDetail;
   message: string | null;
 }) {
+  const { t } = useTranslation();
   const [confirming, setConfirming] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const pending = draft.completion.state === 'PENDING';
@@ -444,7 +438,16 @@ function ActiveScoring({
     <View style={styles.sectionGap}>
       <Scoreboard score={draft.score} />
       {message ? (
-        <FeedbackBanner tone={pending ? 'warning' : 'info'} message={message} />
+        <FeedbackBanner
+          tone={pending ? 'warning' : 'info'}
+          message={
+            pending
+              ? t('match.completionPending')
+              : message.startsWith('Your saved score')
+                ? t('match.restored')
+                : t('match.completionUnconfirmed')
+          }
+        />
       ) : null}
       <PlayerScoringTeams
         controller={controller}
@@ -454,30 +457,30 @@ function ActiveScoring({
       />
       <Surface tone="muted" style={styles.finishArea}>
         <View style={styles.finishCopy}>
-          <AppText variant="heading">Finish Match</AppText>
-          <AppText tone="muted">
-            Completion is irreversible. Only the first submitted result wins.
-          </AppText>
+          <AppText variant="heading">{t('match.finish')}</AppText>
+          <AppText tone="muted">{t('match.finishHint')}</AppText>
         </View>
         {confirming && !pending ? (
           <View style={styles.confirmation}>
             <FeedbackBanner
               tone="warning"
-              title="Submit this final result?"
-              message={`${draft.score.teamA}–${draft.score.teamB} will become the authoritative Match result.`}
+              title={t('match.submitResult')}
+              message={t('match.authoritativeResult', {
+                score: `${draft.score.teamA}–${draft.score.teamB}`,
+              })}
             />
             <View style={styles.buttonRow}>
               <Button
                 disabled={finishing}
                 fullWidth={false}
-                label="Cancel"
+                label={t('common.cancel')}
                 onPress={() => setConfirming(false)}
                 variant="secondary"
               />
               <Button
                 busy={finishing}
                 fullWidth={false}
-                label="Confirm finish"
+                label={t('match.confirmFinish')}
                 onPress={() => void finish()}
               />
             </View>
@@ -485,7 +488,7 @@ function ActiveScoring({
         ) : (
           <Button
             busy={finishing}
-            label={pending ? 'Retry completion' : 'Finish Match'}
+            label={pending ? t('match.retryCompletion') : t('match.finish')}
             onPress={() => (pending ? void finish() : setConfirming(true))}
             variant={pending ? 'primary' : 'danger'}
           />
@@ -496,24 +499,36 @@ function ActiveScoring({
 }
 
 function Scoreboard({ score }: { score: LocalMatchDraftV1['score'] }) {
+  const { colors } = useTheme();
+  const { t } = useTranslation();
   return (
     <Surface padding="medium" style={styles.scoreboard}>
-      <View style={[styles.scoreSide, styles.teamASoft]}>
-        <AppText variant="eyebrow" style={styles.teamAText}>
-          TEAM A
+      <View
+        style={[styles.scoreSide, { backgroundColor: colors.teamASurface }]}
+      >
+        <AppText variant="eyebrow" style={{ color: colors.teamAText }}>
+          {t('common.team', { side: 'A' }).toUpperCase()}
         </AppText>
-        <AppText accessibilityLabel={`Team A, ${score.teamA}`} variant="score">
+        <AppText
+          accessibilityLabel={`${t('common.team', { side: 'A' })}, ${score.teamA}`}
+          variant="score"
+        >
           {score.teamA}
         </AppText>
       </View>
       <AppText accessibilityElementsHidden variant="heading" tone="subtle">
         –
       </AppText>
-      <View style={[styles.scoreSide, styles.teamBSoft]}>
-        <AppText variant="eyebrow" style={styles.teamBText}>
-          TEAM B
+      <View
+        style={[styles.scoreSide, { backgroundColor: colors.teamBSurface }]}
+      >
+        <AppText variant="eyebrow" style={{ color: colors.teamBText }}>
+          {t('common.team', { side: 'B' }).toUpperCase()}
         </AppText>
-        <AppText accessibilityLabel={`Team B, ${score.teamB}`} variant="score">
+        <AppText
+          accessibilityLabel={`${t('common.team', { side: 'B' })}, ${score.teamB}`}
+          variant="score"
+        >
           {score.teamB}
         </AppText>
       </View>
@@ -532,6 +547,8 @@ function PlayerScoringTeams({
   draft: LocalMatchDraftV1;
   match: MatchDetail;
 }) {
+  const { colors } = useTheme();
+  const { t } = useTranslation();
   const { width } = useWindowDimensions();
   const teams = orderedTeams(match);
 
@@ -542,14 +559,19 @@ function PlayerScoringTeams({
           <View
             style={[
               styles.teamTitle,
-              team.side === 'A' ? styles.teamASoft : styles.teamBSoft,
+              {
+                backgroundColor:
+                  team.side === 'A' ? colors.teamASurface : colors.teamBSurface,
+              },
             ]}
           >
             <AppText
               variant="heading"
-              style={team.side === 'A' ? styles.teamAText : styles.teamBText}
+              style={{
+                color: team.side === 'A' ? colors.teamAText : colors.teamBText,
+              }}
             >
-              Team {team.side}
+              {t('common.team', { side: team.side })}
             </AppText>
           </View>
           {team.players.map((player) => (
@@ -584,18 +606,20 @@ function PlayerGoalRow({
   onDecrement(): void;
   onIncrement(): void;
 }) {
+  const { colors } = useTheme();
+  const { t } = useTranslation();
   return (
-    <View style={styles.playerRow}>
+    <View style={[styles.playerRow, { borderTopColor: colors.border }]}>
       <Pressable
-        accessibilityHint="Adds one goal"
-        accessibilityLabel={`${name}, ${goals} goals, add one`}
+        accessibilityHint={t('match.addGoalHint')}
+        accessibilityLabel={t('match.addGoalLabel', { name, count: goals })}
         accessibilityRole="button"
         accessibilityState={{ disabled }}
         disabled={disabled}
         onPress={onIncrement}
         style={({ pressed }) => [
           styles.addGoalTarget,
-          pressed && !disabled && styles.addGoalPressed,
+          pressed && !disabled && { backgroundColor: colors.accentSoft },
           disabled && styles.disabled,
         ]}
       >
@@ -604,21 +628,24 @@ function PlayerGoalRow({
           <View style={styles.playerCopy}>
             <AppText variant="bodyStrong">{name}</AppText>
             <AppText variant="caption" tone="muted">
-              Tap to add +1
+              {t('match.tapAdd')}
             </AppText>
           </View>
         </View>
         <AppText variant="title">{goals}</AppText>
       </Pressable>
       <Pressable
-        accessibilityLabel={`Remove one goal from ${name}`}
+        accessibilityLabel={t('match.removeGoal', { name })}
         accessibilityRole="button"
         accessibilityState={{ disabled: disabled || goals === 0 }}
         disabled={disabled || goals === 0}
         onPress={onDecrement}
         style={({ pressed }) => [
           styles.decrement,
-          pressed && styles.decrementPressed,
+          {
+            borderLeftColor: colors.border,
+          },
+          pressed && { backgroundColor: colors.surfaceSubtle },
           (disabled || goals === 0) && styles.disabled,
         ]}
       >
@@ -631,6 +658,8 @@ function PlayerGoalRow({
 }
 
 function FinalTeamRosters({ match }: { match: MatchDetail }) {
+  const { colors } = useTheme();
+  const { t } = useTranslation();
   const { width } = useWindowDimensions();
 
   return (
@@ -639,9 +668,11 @@ function FinalTeamRosters({ match }: { match: MatchDetail }) {
         <Surface key={team.id} style={styles.rosterTeam}>
           <AppText
             variant="eyebrow"
-            style={team.side === 'A' ? styles.teamAText : styles.teamBText}
+            style={{
+              color: team.side === 'A' ? colors.teamAText : colors.teamBText,
+            }}
           >
-            TEAM {team.side}
+            {t('common.team', { side: team.side }).toUpperCase()}
           </AppText>
           {team.players.map((player) => (
             <View key={player.id} style={styles.rosterRow}>
@@ -664,14 +695,13 @@ function FinishedMatch({
   match: MatchDetail;
   message?: string | null;
 }) {
+  const { colors } = useTheme();
+  const { t } = useTranslation();
   const result = match.result;
 
   if (!result) {
     return (
-      <FeedbackBanner
-        tone="error"
-        message="The server marked this Match finished without a readable result."
-      />
+      <FeedbackBanner tone="error" message={t('match.unreadableResult')} />
     );
   }
 
@@ -691,12 +721,20 @@ function FinishedMatch({
           <Surface key={team.id} style={styles.rosterTeam}>
             <AppText
               variant="heading"
-              style={team.side === 'A' ? styles.teamAText : styles.teamBText}
+              style={{
+                color: team.side === 'A' ? colors.teamAText : colors.teamBText,
+              }}
             >
-              Team {team.side}
+              {t('common.team', { side: team.side })}
             </AppText>
             {team.players.map((player) => (
-              <View key={player.id} style={styles.finalPlayerRow}>
+              <View
+                key={player.id}
+                style={[
+                  styles.finalPlayerRow,
+                  { borderTopColor: colors.border },
+                ]}
+              >
                 <View style={styles.finalPlayerIdentity}>
                   <Avatar
                     name={player.name}
@@ -706,7 +744,7 @@ function FinishedMatch({
                   <AppText variant="bodyStrong">{player.name}</AppText>
                 </View>
                 <AppText variant="bodyStrong">
-                  {goals.get(player.id) ?? 0} goals
+                  {t('common.goalCount', { count: goals.get(player.id) ?? 0 })}
                 </AppText>
               </View>
             ))}
@@ -724,12 +762,7 @@ function orderedTeams(match: MatchDetail): MatchTeam[] {
 }
 
 const styles = StyleSheet.create({
-  screen: { gap: spacing.xxl },
-  topBar: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
+  screen: { gap: spacing.lg },
   heading: { gap: spacing.md },
   headingCopy: { gap: spacing.xxs },
   sectionGap: { gap: spacing.xl },
@@ -750,15 +783,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.md,
   },
-  teamASoft: { backgroundColor: colors.teamASoft },
-  teamBSoft: { backgroundColor: colors.teamBSoft },
-  teamAText: { color: colors.teamA },
-  teamBText: { color: colors.teamB },
   scoringTeam: { flex: 1, minWidth: 0, overflow: 'hidden' },
   teamTitle: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
   playerRow: {
     alignItems: 'stretch',
-    borderTopColor: colors.border,
     borderTopWidth: 1,
     flexDirection: 'row',
     minHeight: SCORING_PLAYER_GOAL_TARGET_MIN_HEIGHT,
@@ -772,7 +800,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
-  addGoalPressed: { backgroundColor: colors.brandSoft },
   playerIdentity: {
     alignItems: 'center',
     flex: 1,
@@ -783,12 +810,10 @@ const styles = StyleSheet.create({
   playerCopy: { flex: 1, minWidth: 0 },
   decrement: {
     alignItems: 'center',
-    borderLeftColor: colors.border,
     borderLeftWidth: 1,
     justifyContent: 'center',
     minWidth: layout.minimumTouchTarget + 8,
   },
-  decrementPressed: { backgroundColor: colors.surfaceMuted },
   disabled: { opacity: 0.45 },
   finishArea: { gap: spacing.lg, marginTop: spacing.lg },
   finishCopy: { gap: spacing.xs },
@@ -801,7 +826,6 @@ const styles = StyleSheet.create({
   },
   finalPlayerRow: {
     alignItems: 'center',
-    borderTopColor: colors.border,
     borderTopWidth: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',

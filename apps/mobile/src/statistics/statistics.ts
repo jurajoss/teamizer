@@ -20,17 +20,20 @@ export function historyRows(pages: PlayerMatchHistoryPage[] | undefined) {
   return pages?.flatMap(({ items }) => items) ?? [];
 }
 
-export function formatWinRate(value: number | null): string {
+export function formatWinRate(value: number | null, locale = 'en'): string {
   if (value === null) return 'N/A';
-  return `${new Intl.NumberFormat('en-US', {
+  return `${new Intl.NumberFormat(locale, {
     maximumFractionDigits: 1,
     minimumFractionDigits: 0,
   }).format(value * 100)}%`;
 }
 
-export function formatGoalsPerMatch(value: number | null): string {
+export function formatGoalsPerMatch(
+  value: number | null,
+  locale = 'en',
+): string {
   if (value === null) return 'N/A';
-  return new Intl.NumberFormat('en-US', {
+  return new Intl.NumberFormat(locale, {
     maximumFractionDigits: 2,
     minimumFractionDigits: 2,
   }).format(value);

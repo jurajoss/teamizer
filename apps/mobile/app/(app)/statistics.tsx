@@ -1,23 +1,24 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { Pressable, StyleSheet, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import {
   AppText,
   Avatar,
-  BrandLockup,
   Button,
-  colors,
   FeedbackBanner,
   layout,
   radii,
   spacing,
   StatusPill,
   Surface,
+  useTheme,
 } from '@teamizer/ui';
 
 import type { RankingRow } from '../../src/api/contracts';
 import { useAppServices } from '../../src/providers/app-services-context';
+import { usePreferences } from '../../src/preferences/preferences-context';
 import { statisticsQueryKeys } from '../../src/statistics/statistics-query-keys';
 import {
   formatGoalsPerMatch,
@@ -31,6 +32,7 @@ import { AppScreen } from '../../src/ui/app-screen';
 const PAGE_SIZE = 25;
 
 export default function StatisticsRoute() {
+  const { t } = useTranslation();
   const { apiClient } = useAppServices();
   const rankingQuery = useInfiniteQuery({
     queryKey: statisticsQueryKeys.rankings,
@@ -51,25 +53,9 @@ export default function StatisticsRoute() {
 
   return (
     <StatisticsPageFrame>
-      <View style={styles.heading}>
-        <StatusPill label="STATISTICS" />
-        <View style={styles.headingCopy}>
-          <AppText accessibilityRole="header" variant="title">
-            Player ranking.
-          </AppText>
-          <AppText tone="muted">
-            Authoritative results from finished Matches, ordered by win rate and
-            the approved tie-breakers.
-          </AppText>
-        </View>
-      </View>
-
       {viewState === 'loading' ? (
         <Surface tone="muted" style={styles.stateCard}>
-          <AppText variant="heading">Loading ranking…</AppText>
-          <AppText tone="muted">
-            Calculating the latest finished results.
-          </AppText>
+          <AppText variant="heading">{t('ranking.loading')}</AppText>
         </Surface>
       ) : null}
 
@@ -77,11 +63,11 @@ export default function StatisticsRoute() {
         <View style={styles.stateCard}>
           <FeedbackBanner
             tone="error"
-            title="Ranking unavailable"
-            message="Check your connection and try again."
+            title={t('ranking.unavailable')}
+            message={t('common.connectionRetry')}
           />
           <Button
-            label="Try again"
+            label={t('common.retry')}
             onPress={() => void rankingQuery.refetch()}
             variant="secondary"
           />
@@ -90,16 +76,13 @@ export default function StatisticsRoute() {
 
       {viewState === 'empty' ? (
         <Surface tone="muted" style={styles.stateCard}>
-          <AppText variant="heading">No Players to rank</AppText>
-          <AppText tone="muted">
-            Active Players will appear here, including Players whose first Match
-            has not finished yet.
-          </AppText>
+          <AppText variant="heading">{t('ranking.empty')}</AppText>
+          <AppText tone="muted">{t('ranking.emptyHint')}</AppText>
         </Surface>
       ) : null}
 
       {viewState === 'success' ? (
-        <View accessibilityLabel="Player ranking" style={styles.list}>
+        <View accessibilityLabel={t('ranking.listLabel')} style={styles.list}>
           {rows.map((row) => (
             <RankingListRow
               key={row.player.id}
@@ -110,7 +93,7 @@ export default function StatisticsRoute() {
           {rankingQuery.hasNextPage ? (
             <Button
               busy={rankingQuery.isFetchingNextPage}
-              label="Load more Players"
+              label={t('ranking.loadMore')}
               onPress={() => void rankingQuery.fetchNextPage()}
               variant="secondary"
             />
@@ -123,34 +106,32 @@ export default function StatisticsRoute() {
 
 function StatisticsPageFrame({ children }: { children: React.ReactNode }) {
   return (
-    <AppScreen scroll contentStyle={styles.screen}>
-      <View style={styles.topBar}>
-        <BrandLockup compact />
-        <Button
-          fullWidth={false}
-          label="Back"
-          onPress={() => returnHome()}
-          variant="ghost"
-        />
-      </View>
+    <AppScreen scroll underHeader contentStyle={styles.screen}>
       {children}
     </AppScreen>
   );
 }
 
 function RankingListRow({ row, onOpen }: { row: RankingRow; onOpen(): void }) {
+  const { colors } = useTheme();
+  const { t } = useTranslation();
+  const { language } = usePreferences();
   return (
     <Pressable
-      accessibilityHint="Opens Player statistics and recent Matches"
+      accessibilityHint={t('ranking.openHint')}
       accessibilityLabel={`${row.rank}. ${row.player.name}`}
       accessibilityRole="button"
       onPress={onOpen}
       style={({ pressed }) => [
         styles.rankingRow,
-        pressed && styles.rankingRowPressed,
+        {
+          backgroundColor: colors.surface,
+          borderColor: colors.border,
+        },
+        pressed && { backgroundColor: colors.accentSoft },
       ]}
     >
-      <View style={styles.rankBadge}>
+      <View style={[styles.rankBadge, { backgroundColor: colors.accentSoft }]}>
         <AppText variant="heading" tone="brand">
           {row.rank}
         </AppText>
@@ -162,20 +143,26 @@ function RankingListRow({ row, onOpen }: { row: RankingRow; onOpen(): void }) {
             {row.player.name}
           </AppText>
           {row.player.type === 'GUEST' ? (
-            <StatusPill label="GUEST" tone="neutral" />
+            <StatusPill label={t('status.guest')} tone="neutral" />
           ) : null}
         </View>
         <View style={styles.metrics}>
           <Metric
-            label="Win rate"
-            value={formatWinRate(row.statistics.winRate)}
+            label={t('common.winRate')}
+            value={formatWinRate(row.statistics.winRate, language)}
           />
-          <Metric label="Matches" value={String(row.statistics.matches)} />
           <Metric
-            label="Goals / Match"
-            value={formatGoalsPerMatch(row.statistics.goalsPerMatch)}
+            label={t('common.matches')}
+            value={String(row.statistics.matches)}
           />
-          <Metric label="Goals" value={String(row.statistics.goals)} />
+          <Metric
+            label={t('common.goalsPerMatch')}
+            value={formatGoalsPerMatch(row.statistics.goalsPerMatch, language)}
+          />
+          <Metric
+            label={t('common.goals')}
+            value={String(row.statistics.goals)}
+          />
         </View>
       </View>
       <AppText accessibilityElementsHidden tone="subtle" variant="heading">
@@ -196,26 +183,12 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function returnHome(): void {
-  if (router.canGoBack()) router.back();
-  else router.replace('/home');
-}
-
 const styles = StyleSheet.create({
-  screen: { gap: spacing.xxl },
-  topBar: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  heading: { gap: spacing.lg, marginTop: spacing.lg },
-  headingCopy: { gap: spacing.sm, maxWidth: 620 },
+  screen: { gap: spacing.lg },
   stateCard: { gap: spacing.md },
   list: { gap: spacing.sm },
   rankingRow: {
     alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
     borderRadius: radii.lg,
     borderWidth: 1,
     flexDirection: 'row',
@@ -223,10 +196,8 @@ const styles = StyleSheet.create({
     minHeight: 104,
     padding: spacing.md,
   },
-  rankingRowPressed: { backgroundColor: colors.brandSoft },
   rankBadge: {
     alignItems: 'center',
-    backgroundColor: colors.brandSoft,
     borderRadius: radii.md,
     justifyContent: 'center',
     minHeight: layout.minimumTouchTarget,

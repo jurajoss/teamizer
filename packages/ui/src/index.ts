@@ -12,4 +12,17 @@ export { NumberStepper } from './number-stepper';
 export { StatusPill } from './status-pill';
 export { Surface } from './surface';
 export { TextField } from './text-field';
-export { colors, layout, radii, shadows, spacing, typography } from './theme';
+export { ThemeProvider, useTheme } from './theme-provider';
+export {
+  colors,
+  darkColors,
+  darkTheme,
+  layout,
+  lightColors,
+  lightTheme,
+  radii,
+  shadows,
+  spacing,
+  typography,
+} from './theme';
+export type { AppTheme, ThemeColors, ThemeMode } from './theme';

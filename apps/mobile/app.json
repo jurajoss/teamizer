@@ -6,7 +6,20 @@
     "orientation": "default",
     "scheme": "teamizer",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "locales": {
+      "en": {
+        "ios": {
+          "NSCameraUsageDescription": "Allow Teamizer to take a Player photo.",
+          "NSPhotoLibraryUsageDescription": "Allow Teamizer to choose a Player photo."
+        }
+      },
+      "cs": {
+        "ios": {
+          "NSCameraUsageDescription": "Povolte Teamizeru pořídit fotografii hráče.",
+          "NSPhotoLibraryUsageDescription": "Povolte Teamizeru vybrat fotografii hráče."
+        }
+      }
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.syrovyj.teamizer"

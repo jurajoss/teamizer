@@ -1,7 +1,8 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText } from './app-text';
-import { colors, layout, radii, spacing } from './theme';
+import { layout, radii, spacing } from './theme';
+import { useTheme } from './theme-provider';
 
 export function NumberStepper({
   label,
@@ -9,6 +10,9 @@ export function NumberStepper({
   minimum,
   maximum,
   disabled = false,
+  decreaseLabel,
+  increaseLabel,
+  valueLabel,
   onChange,
 }: {
   label: string;
@@ -16,6 +20,9 @@ export function NumberStepper({
   minimum: number;
   maximum: number;
   disabled?: boolean;
+  decreaseLabel?: string;
+  increaseLabel?: string;
+  valueLabel?: string;
   onChange(value: number): void;
 }) {
   const mayDecrease = !disabled && value > minimum;
@@ -28,20 +35,22 @@ export function NumberStepper({
       </AppText>
       <View style={styles.controls}>
         <StepperButton
-          label={`Decrease ${label}`}
+          label={decreaseLabel ?? `Decrease ${label}`}
           symbol="−"
           disabled={!mayDecrease}
           onPress={() => onChange(value - 1)}
         />
         <AppText
-          accessibilityLabel={`${label}: ${value} out of ${maximum}`}
+          accessibilityLabel={
+            valueLabel ?? `${label}: ${value} out of ${maximum}`
+          }
           variant="heading"
           style={styles.value}
         >
           {value}
         </AppText>
         <StepperButton
-          label={`Increase ${label}`}
+          label={increaseLabel ?? `Increase ${label}`}
           symbol="+"
           disabled={!mayIncrease}
           onPress={() => onChange(value + 1)}
@@ -62,6 +71,7 @@ function StepperButton({
   disabled: boolean;
   onPress(): void;
 }) {
+  const { colors } = useTheme();
   return (
     <Pressable
       accessibilityLabel={label}
@@ -72,11 +82,12 @@ function StepperButton({
       onPress={onPress}
       style={({ pressed }) => [
         styles.stepperButton,
-        pressed && !disabled && styles.stepperButtonPressed,
+        { backgroundColor: colors.accentSoft },
+        pressed && !disabled && { backgroundColor: colors.surfaceStrong },
         disabled && styles.disabled,
       ]}
     >
-      <AppText variant="heading" tone="brand">
+      <AppText variant="heading" style={{ color: colors.accent }}>
         {symbol}
       </AppText>
     </Pressable>
@@ -99,12 +110,10 @@ const styles = StyleSheet.create({
   value: { minWidth: 32, textAlign: 'center' },
   stepperButton: {
     alignItems: 'center',
-    backgroundColor: colors.brandSoft,
     borderRadius: radii.sm,
     height: layout.minimumTouchTarget,
     justifyContent: 'center',
     width: layout.minimumTouchTarget,
   },
-  stepperButtonPressed: { backgroundColor: colors.surfaceStrong },
   disabled: { opacity: 0.35 },
 });

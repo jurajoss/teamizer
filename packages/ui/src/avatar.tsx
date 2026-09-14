@@ -3,39 +3,47 @@ import { Image, StyleSheet, View } from 'react-native';
 import type { StyleProp, ViewStyle } from 'react-native';
 
 import { AppText } from './app-text';
-import { avatarInitials } from './avatar-utils';
-import { colors, radii } from './theme';
+import {
+  avatarInitials,
+  avatarInitialsLayout,
+  avatarSizeMetrics,
+  type AvatarSize,
+} from './avatar-utils';
+import { radii } from './theme';
+import { useTheme } from './theme-provider';
 
-export type AvatarSize = 'small' | 'medium' | 'large' | 'hero';
-
-const avatarSizes: Record<AvatarSize, number> = {
-  small: 32,
-  medium: 44,
-  large: 64,
-  hero: 96,
-};
+export type { AvatarSize } from './avatar-utils';
 
 export function Avatar({
   name,
   url,
   size = 'medium',
   style,
+  accessibilityLabel,
 }: {
   name: string;
   url: string | null;
   size?: AvatarSize;
   style?: StyleProp<ViewStyle>;
+  accessibilityLabel?: string;
 }) {
+  const { colors } = useTheme();
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
-  const dimension = avatarSizes[size];
+  const { dimension, fontSize, lineHeight } = avatarSizeMetrics[size];
 
   return (
     <View
-      accessibilityLabel={`${name} avatar`}
+      accessibilityLabel={accessibilityLabel ?? name}
       accessibilityRole="image"
       style={[
         styles.frame,
-        { borderRadius: dimension / 2, height: dimension, width: dimension },
+        {
+          backgroundColor: colors.accentSoft,
+          borderColor: colors.borderStrong,
+          borderRadius: dimension / 2,
+          height: dimension,
+          width: dimension,
+        },
         style,
       ]}
     >
@@ -49,8 +57,10 @@ export function Avatar({
       ) : (
         <AppText
           numberOfLines={1}
-          style={{ fontSize: Math.max(12, Math.round(dimension * 0.34)) }}
-          tone="brand"
+          style={[
+            styles.initials,
+            { color: colors.accent, fontSize, lineHeight },
+          ]}
           variant="label"
         >
           {avatarInitials(name)}
@@ -63,11 +73,10 @@ export function Avatar({
 const styles = StyleSheet.create({
   frame: {
     alignItems: 'center',
-    backgroundColor: colors.brandSoft,
-    borderColor: colors.borderStrong,
     borderRadius: radii.pill,
     borderWidth: 1,
     justifyContent: 'center',
     overflow: 'hidden',
   },
+  initials: avatarInitialsLayout,
 });

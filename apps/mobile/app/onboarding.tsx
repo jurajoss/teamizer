@@ -1,18 +1,19 @@
 import { Redirect, type Href } from 'expo-router';
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, StyleSheet, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import {
   AppText,
   BrandLockup,
   Button,
-  colors,
   FeedbackBanner,
   layout,
   NumberStepper,
   spacing,
   Surface,
   TextField,
+  useTheme,
 } from '@teamizer/ui';
 
 import {
@@ -26,15 +27,12 @@ import { FoundationScreen } from '../src/ui/foundation-screen';
 
 type AttributeName = keyof OnboardingInput['attributes'];
 
-const attributeFields: ReadonlyArray<{
-  name: AttributeName;
-  label: string;
-}> = [
-  { name: 'speed', label: 'Speed' },
-  { name: 'endurance', label: 'Endurance' },
-  { name: 'defense', label: 'Defense' },
-  { name: 'attack', label: 'Attack' },
-  { name: 'technique', label: 'Technique' },
+const attributeNames: ReadonlyArray<AttributeName> = [
+  'speed',
+  'endurance',
+  'defense',
+  'attack',
+  'technique',
 ];
 
 const initialAttributes: Record<AttributeName, number> = {
@@ -46,6 +44,8 @@ const initialAttributes: Record<AttributeName, number> = {
 };
 
 export default function OnboardingScreen() {
+  const { t } = useTranslation();
+  const { colors } = useTheme();
   const { state, onboard, signOut } = useSession();
   const [name, setName] = useState('');
   const [attributes, setAttributes] = useState(initialAttributes);
@@ -55,7 +55,7 @@ export default function OnboardingScreen() {
   const [signOutMessage, setSignOutMessage] = useState<string | null>(null);
 
   if (state.status === 'RESTORING' || state.status === 'CHECKING_IDENTITY') {
-    return <FoundationScreen busy message="Checking your Teamizer profile…" />;
+    return <FoundationScreen busy message={t('auth.checking')} />;
   }
 
   const isOnboardingError =
@@ -78,7 +78,7 @@ export default function OnboardingScreen() {
     });
 
     if (!parsedInput.success) {
-      setMessage('Enter a name and rate every attribute from 1 to 10.');
+      setMessage(t('onboarding.validation'));
       return;
     }
 
@@ -99,7 +99,7 @@ export default function OnboardingScreen() {
     try {
       await signOut();
     } catch {
-      setSignOutMessage('Sign-out failed. Try again.');
+      setSignOutMessage(t('account.signOutFailed'));
     } finally {
       setSigningOut(false);
     }
@@ -118,7 +118,7 @@ export default function OnboardingScreen() {
               busy={signingOut}
               disabled={submitting}
               fullWidth={false}
-              label="Sign out"
+              label={t('common.signOut')}
               onPress={() => void submitSignOut()}
               variant="ghost"
             />
@@ -126,60 +126,67 @@ export default function OnboardingScreen() {
 
           <View style={styles.intro}>
             <AppText accessibilityRole="header" variant="title">
-              Set up your player
+              {t('onboarding.title')}
             </AppText>
-            <AppText tone="muted">
-              Add the name teammates know you by, then give Teamizer a starting
-              point for balanced teams.
-            </AppText>
+            <AppText tone="muted">{t('onboarding.intro')}</AppText>
           </View>
 
           <TextField
             autoCapitalize="words"
             editable={!submitting}
-            label="Player name"
+            label={t('onboarding.playerName')}
             maxLength={120}
             onChangeText={(value) => {
               setName(value);
               setMessage(null);
             }}
-            placeholder="Your name"
+            placeholder={t('onboarding.namePlaceholder')}
             returnKeyType="done"
             value={name}
           />
 
-          <FeedbackBanner
-            tone="info"
-            message="These starting ratings are used for team balancing. They are not shown in your normal player profile."
-          />
+          <FeedbackBanner tone="info" message={t('onboarding.privacy')} />
 
           <View style={styles.ratingSection}>
             <View style={styles.sectionHeading}>
-              <AppText variant="heading">Your starting ratings</AppText>
+              <AppText variant="heading">{t('onboarding.ratings')}</AppText>
               <AppText variant="caption" tone="muted">
-                Choose from 1 to 10. Five is a good neutral starting point.
+                {t('onboarding.ratingsHint')}
               </AppText>
             </View>
             <Surface padding="medium">
-              {attributeFields.map(({ name: attribute, label }, index) => (
-                <View
-                  key={attribute}
-                  style={
-                    index < attributeFields.length - 1
-                      ? styles.ratingDivider
-                      : undefined
-                  }
-                >
-                  <NumberStepper
-                    disabled={submitting}
-                    label={label}
-                    maximum={10}
-                    minimum={1}
-                    onChange={(value) => setAttribute(attribute, value)}
-                    value={attributes[attribute]}
-                  />
-                </View>
-              ))}
+              {attributeNames.map((attribute, index) => {
+                const label = t(`attributes.${attribute}`);
+                return (
+                  <View
+                    key={attribute}
+                    style={
+                      index < attributeNames.length - 1
+                        ? [
+                            styles.ratingDivider,
+                            { borderBottomColor: colors.border },
+                          ]
+                        : undefined
+                    }
+                  >
+                    <NumberStepper
+                      decreaseLabel={t('attributes.decrease', { label })}
+                      disabled={submitting}
+                      increaseLabel={t('attributes.increase', { label })}
+                      label={label}
+                      maximum={10}
+                      minimum={1}
+                      onChange={(value) => setAttribute(attribute, value)}
+                      value={attributes[attribute]}
+                      valueLabel={t('attributes.value', {
+                        label,
+                        value: attributes[attribute],
+                        maximum: 10,
+                      })}
+                    />
+                  </View>
+                );
+              })}
             </Surface>
           </View>
 
@@ -187,8 +194,8 @@ export default function OnboardingScreen() {
           {isOnboardingError ? (
             <FeedbackBanner
               tone="error"
-              title="Profile wasn’t created"
-              message={state.message}
+              title={t('onboarding.failed')}
+              message={t('errors.generic')}
             />
           ) : null}
           {signOutMessage ? (
@@ -198,11 +205,13 @@ export default function OnboardingScreen() {
           <Button
             busy={submitting}
             disabled={signingOut}
-            label={submitting ? 'Creating profile…' : 'Create profile'}
+            label={
+              submitting ? t('onboarding.creating') : t('onboarding.create')
+            }
             onPress={() => void submit()}
           />
           <AppText style={styles.privacyNote} variant="caption" tone="subtle">
-            This creates your personal Teamizer player profile.
+            {t('onboarding.footnote')}
           </AppText>
         </View>
       </AppScreen>
@@ -238,7 +247,6 @@ const styles = StyleSheet.create({
     gap: spacing.xxs,
   },
   ratingDivider: {
-    borderBottomColor: colors.border,
     borderBottomWidth: 1,
   },
   privacyNote: {

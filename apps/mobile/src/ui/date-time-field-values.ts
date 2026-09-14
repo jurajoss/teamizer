@@ -15,8 +15,9 @@ export function defaultDateTimeFieldValue(
 export function displayDateTimeFieldValue(
   value: Date,
   mode: DateTimeFieldMode,
+  locale?: string,
 ): string {
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat(locale, {
     ...(mode === 'date'
       ? { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }
       : { hour: '2-digit', minute: '2-digit' }),

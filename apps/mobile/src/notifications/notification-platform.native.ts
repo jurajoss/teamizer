@@ -2,6 +2,7 @@ import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
+import { i18n } from '../i18n/i18n';
 import {
   matchIdFromNotificationData,
   type NotificationPlatform,
@@ -28,7 +29,7 @@ export function createNotificationPlatform(): NotificationPlatform {
       }
       if (Platform.OS === 'android') {
         await Notifications.setNotificationChannelAsync('match-reminders', {
-          name: 'Match reminders',
+          name: i18n.t('notifications.channelName'),
           importance: Notifications.AndroidImportance.DEFAULT,
         });
       }

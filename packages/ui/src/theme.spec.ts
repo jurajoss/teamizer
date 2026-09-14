@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { colors, layout, spacing } from './theme';
+import {
+  darkColors,
+  darkTheme,
+  layout,
+  lightColors,
+  lightTheme,
+  spacing,
+} from './theme';
 
 describe('Teamizer visual foundation', () => {
   it('keeps shared touch targets at or above mobile accessibility guidance', () => {
@@ -15,13 +22,39 @@ describe('Teamizer visual foundation', () => {
   });
 
   it('provides accessible contrast for primary text and actions', () => {
-    expect(contrastRatio(colors.ink, colors.canvas)).toBeGreaterThanOrEqual(7);
-    expect(contrastRatio(colors.onBrand, colors.brand)).toBeGreaterThanOrEqual(
-      4.5,
-    );
     expect(
-      contrastRatio(colors.error, colors.errorSoft),
+      contrastRatio(lightColors.textPrimary, lightColors.background),
+    ).toBeGreaterThanOrEqual(7);
+    expect(
+      contrastRatio(lightColors.accentContrast, lightColors.accent),
     ).toBeGreaterThanOrEqual(4.5);
+    expect(
+      contrastRatio(lightColors.danger, lightColors.dangerSurface),
+    ).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('provides semantic dark colors with readable status and team pairs', () => {
+    expect(
+      contrastRatio(darkColors.textPrimary, darkColors.background),
+    ).toBeGreaterThanOrEqual(7);
+    expect(
+      contrastRatio(darkColors.success, darkColors.successSurface),
+    ).toBeGreaterThanOrEqual(4.5);
+    expect(
+      contrastRatio(darkColors.teamAText, darkColors.teamASurface),
+    ).toBeGreaterThanOrEqual(4.5);
+    expect(
+      contrastRatio(darkColors.teamBText, darkColors.teamBSurface),
+    ).toBeGreaterThanOrEqual(4.5);
+    expect(darkColors.teamASurface).not.toBe(darkColors.teamBSurface);
+  });
+
+  it('selects one complete semantic palette for each theme mode', () => {
+    expect(lightTheme).toMatchObject({ mode: 'light', colors: lightColors });
+    expect(darkTheme).toMatchObject({ mode: 'dark', colors: darkColors });
+    expect(Object.keys(darkColors).sort()).toEqual(
+      Object.keys(lightColors).sort(),
+    );
   });
 });
 

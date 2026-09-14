@@ -2,21 +2,21 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Redirect, router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, Switch, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import {
   AppText,
-  BrandLockup,
   Button,
-  colors,
   FeedbackBanner,
   layout,
   spacing,
-  StatusPill,
   Surface,
   TextField,
+  useTheme,
 } from '@teamizer/ui';
 
 import { ApiClientError } from '../../../../src/api/authenticated-api-client';
+import { localizedErrorMessage } from '../../../../src/i18n/localized-error';
 import type {
   Schedule,
   UpdateScheduleInput,
@@ -29,7 +29,6 @@ import {
   parseLocalTime,
   reminderDraftFromMinutes,
   reminderDraftToMinutes,
-  reminderUnitLabel,
   runSingleSubmission,
   weekdays,
   type ReminderDraft,
@@ -83,6 +82,8 @@ const initialDraft: ScheduleDraft = {
 };
 
 export default function RecurringScheduleRoute() {
+  const { t } = useTranslation();
+  const { colors } = useTheme();
   const { state } = useSession();
   const { apiClient } = useAppServices();
   const queryClient = useQueryClient();
@@ -151,7 +152,15 @@ export default function RecurringScheduleRoute() {
 
   const save = async () => {
     await runSingleSubmission(saveGate, async () => {
-      const result = validateScheduleDraft(draft);
+      const result = validateScheduleDraft(draft, {
+        localStartTime: t('validation.chooseTime'),
+        timeZone: t('validation.enterTimeZone'),
+        sportId: t('validation.chooseSport'),
+        location: t('validation.locationLength'),
+        generationHorizonDays: t('validation.enterHorizon'),
+        registrationReminder: t('validation.reminder'),
+        finalReminder: t('validation.reminder'),
+      });
       setValidation(result.errors);
       setFeedback(null);
       if (!result.input) return;
@@ -162,15 +171,12 @@ export default function RecurringScheduleRoute() {
         setDraft(draftFromSchedule(schedule));
         setFeedback({
           tone: 'success',
-          message: 'Recurring Schedule saved.',
+          message: t('schedule.saved'),
         });
       } catch (error) {
         setFeedback({
           tone: 'error',
-          message:
-            error instanceof ApiClientError
-              ? error.message
-              : 'The recurring Schedule could not be saved.',
+          message: localizedErrorMessage(error, t, 'schedule.saveFailed'),
         });
       }
     });
@@ -185,10 +191,7 @@ export default function RecurringScheduleRoute() {
     } catch (error) {
       setFeedback({
         tone: 'error',
-        message:
-          error instanceof ApiClientError
-            ? error.message
-            : 'The next scheduled Match could not be generated.',
+        message: localizedErrorMessage(error, t, 'schedule.generateFailed'),
       });
     }
   };
@@ -197,42 +200,23 @@ export default function RecurringScheduleRoute() {
   const loadError = scheduleQuery.isError || sportsQuery.isError;
 
   return (
-    <AppScreen scroll contentStyle={styles.screen}>
-      <View style={styles.topBar}>
-        <BrandLockup compact />
-        <Button
-          fullWidth={false}
-          label="Back"
-          onPress={() => router.back()}
-          variant="ghost"
-        />
-      </View>
-      <View style={styles.heading}>
-        <StatusPill label="ADMIN" tone="info" />
-        <AppText accessibilityRole="header" variant="title">
-          Recurring Schedule
-        </AppText>
-        <AppText tone="muted">
-          Configure one weekly Match. Existing materialized Matches keep their
-          current time, location, attendance, and lifecycle state.
-        </AppText>
-      </View>
+    <AppScreen scroll underHeader contentStyle={styles.screen}>
+      <AppText tone="muted">{t('schedule.intro')}</AppText>
 
       {loading ? (
         <Surface tone="muted" style={styles.stateCard}>
-          <AppText variant="heading">Loading Schedule…</AppText>
-          <AppText tone="muted">Reading the recurring configuration.</AppText>
+          <AppText variant="heading">{t('schedule.loading')}</AppText>
         </Surface>
       ) : null}
       {loadError ? (
         <View style={styles.stateCard}>
           <FeedbackBanner
             tone="error"
-            title="Schedule unavailable"
-            message="Check your connection and try again."
+            title={t('schedule.unavailable')}
+            message={t('common.connectionRetry')}
           />
           <Button
-            label="Try again"
+            label={t('common.retry')}
             onPress={() => {
               void scheduleQuery.refetch();
               void sportsQuery.refetch();
@@ -247,50 +231,50 @@ export default function RecurringScheduleRoute() {
           {scheduleQuery.data === null ? (
             <FeedbackBanner
               tone="info"
-              title="No recurring Schedule yet"
-              message="Choose the weekly setup below, then save it."
+              title={t('schedule.missing')}
+              message={t('schedule.missingHint')}
             />
           ) : null}
           {sportsQuery.data?.length === 0 ? (
             <FeedbackBanner
               tone="warning"
-              title="No supported Sport"
-              message="Bootstrap the default Football Sport before saving a Schedule."
+              title={t('createMatch.noSport')}
+              message={t('createMatch.noSportHint')}
             />
           ) : null}
 
           <Surface style={styles.section}>
             <View style={styles.switchRow}>
               <View style={styles.switchCopy}>
-                <AppText variant="heading">Automatic generation</AppText>
+                <AppText variant="heading">{t('schedule.automatic')}</AppText>
                 <AppText tone="muted">
                   {draft.enabled
-                    ? 'Enabled — the scheduler may materialize the next occurrence.'
-                    : 'Disabled — no recurring Matches will be generated.'}
+                    ? t('schedule.enabled')
+                    : t('schedule.disabled')}
                 </AppText>
               </View>
               <Switch
-                accessibilityLabel="Automatic recurring Match generation"
+                accessibilityLabel={t('schedule.automaticLabel')}
                 accessibilityState={{ checked: draft.enabled }}
                 onValueChange={(enabled) =>
                   setDraft((current) => ({ ...current, enabled }))
                 }
                 thumbColor={colors.surface}
-                trackColor={{ false: colors.borderStrong, true: colors.brand }}
+                trackColor={{ false: colors.borderStrong, true: colors.accent }}
                 value={draft.enabled}
               />
             </View>
           </Surface>
 
           <Surface style={styles.section}>
-            <AppText variant="heading">Weekly occurrence</AppText>
-            <AppText variant="label">Weekday</AppText>
+            <AppText variant="heading">{t('schedule.weekly')}</AppText>
+            <AppText variant="label">{t('schedule.weekday')}</AppText>
             <View style={styles.choiceRow}>
               {weekdays.map((weekday) => (
                 <Button
                   fullWidth={false}
                   key={weekday.value}
-                  label={weekday.label}
+                  label={t(`schedule.weekdays.${weekday.value}`)}
                   onPress={() =>
                     setDraft((current) => ({
                       ...current,
@@ -305,7 +289,7 @@ export default function RecurringScheduleRoute() {
             </View>
             <DateTimeField
               error={validation.localStartTime}
-              label="Local Match time"
+              label={t('schedule.matchTime')}
               mode="time"
               onChange={(localStartTime) =>
                 setDraft((current) => ({ ...current, localStartTime }))
@@ -316,8 +300,8 @@ export default function RecurringScheduleRoute() {
               autoCapitalize="none"
               autoCorrect={false}
               error={validation.timeZone ?? null}
-              hint="IANA time zone, for example Europe/Prague."
-              label="Time zone"
+              hint={t('schedule.timeZoneHint')}
+              label={t('schedule.timeZone')}
               maxLength={64}
               onChangeText={(timeZone) =>
                 setDraft((current) => ({ ...current, timeZone }))
@@ -327,8 +311,8 @@ export default function RecurringScheduleRoute() {
           </Surface>
 
           <Surface style={styles.section}>
-            <AppText variant="heading">Sport & place</AppText>
-            <AppText variant="label">Sport</AppText>
+            <AppText variant="heading">{t('schedule.sportPlace')}</AppText>
+            <AppText variant="label">{t('createMatch.sport')}</AppText>
             <View style={styles.choiceRow}>
               {sportsQuery.data?.map((sport) => (
                 <Button
@@ -352,24 +336,24 @@ export default function RecurringScheduleRoute() {
             ) : null}
             <TextField
               error={validation.location ?? null}
-              label="Location (optional)"
+              label={t('createMatch.location')}
               maxLength={255}
               onChangeText={(location) =>
                 setDraft((current) => ({ ...current, location }))
               }
-              placeholder="e.g. Pitch A"
+              placeholder={t('createMatch.locationPlaceholder')}
               value={draft.location}
             />
           </Surface>
 
           <Surface style={styles.section}>
-            <AppText variant="heading">Generation & reminders</AppText>
+            <AppText variant="heading">{t('schedule.reminders')}</AppText>
             <TextField
               error={validation.generationHorizonDays ?? null}
-              hint="How many local calendar days before the Match it may be created."
+              hint={t('schedule.horizonHint')}
               inputMode="numeric"
               keyboardType="number-pad"
-              label="Generation horizon (days)"
+              label={t('schedule.horizon')}
               onChangeText={(generationHorizonDays) =>
                 setDraft((current) => ({
                   ...current,
@@ -380,7 +364,7 @@ export default function RecurringScheduleRoute() {
             />
             <ReminderEditor
               error={validation.registrationReminder ?? null}
-              label="Registration reminder"
+              label={t('schedule.registrationReminder')}
               onChange={(registrationReminder) =>
                 setDraft((current) => ({
                   ...current,
@@ -391,7 +375,7 @@ export default function RecurringScheduleRoute() {
             />
             <ReminderEditor
               error={validation.finalReminder ?? null}
-              label="Final reminder"
+              label={t('schedule.finalReminder')}
               onChange={(finalReminder) =>
                 setDraft((current) => ({ ...current, finalReminder }))
               }
@@ -401,14 +385,16 @@ export default function RecurringScheduleRoute() {
 
           <FeedbackBanner
             tone="warning"
-            title="Future scheduling only"
-            message="Saving changes does not rewrite an already materialized Match. The new setup applies after that occurrence."
+            title={t('schedule.futureOnly')}
+            message={t('schedule.futureOnlyHint')}
           />
           {feedback ? (
             <FeedbackBanner
               tone={feedback.tone}
               title={
-                feedback.tone === 'success' ? 'Schedule saved' : 'Action failed'
+                feedback.tone === 'success'
+                  ? t('schedule.saved')
+                  : t('schedule.actionFailed')
               }
               message={feedback.message}
             />
@@ -416,19 +402,18 @@ export default function RecurringScheduleRoute() {
           <Button
             busy={updateMutation.isPending}
             disabled={!sportsQuery.data?.length}
-            label={scheduleQuery.data ? 'Save changes' : 'Create Schedule'}
+            label={scheduleQuery.data ? t('common.save') : t('schedule.create')}
             onPress={() => void save()}
           />
           <Button
             busy={generateMutation.isPending}
             disabled={!scheduleQuery.data || !scheduleQuery.data.enabled}
-            label="Generate next Match now"
+            label={t('schedule.generate')}
             onPress={() => void generate()}
             variant="secondary"
           />
           <AppText variant="caption" tone="muted">
-            Manual generation uses the same horizon and duplicate protection as
-            the automatic scheduler.
+            {t('schedule.manualHint')}
           </AppText>
         </View>
       ) : null}
@@ -447,6 +432,7 @@ function ReminderEditor({
   error?: string | null | undefined;
   onChange(value: ReminderDraft): void;
 }) {
+  const { t } = useTranslation();
   const units: ReminderUnit[] = ['MINUTES', 'HOURS', 'DAYS'];
   return (
     <View style={styles.reminderEditor}>
@@ -463,7 +449,13 @@ function ReminderEditor({
           <Button
             fullWidth={false}
             key={unit}
-            label={reminderUnitLabel(unit)}
+            label={
+              unit === 'DAYS'
+                ? t('schedule.days')
+                : unit === 'HOURS'
+                  ? t('schedule.hours')
+                  : t('schedule.minutes')
+            }
             onPress={() => onChange({ ...value, unit })}
             variant={value.unit === unit ? 'primary' : 'secondary'}
           />
@@ -489,30 +481,34 @@ function draftFromSchedule(schedule: Schedule): ScheduleDraft {
   };
 }
 
-function validateScheduleDraft(draft: ScheduleDraft): {
+function validateScheduleDraft(
+  draft: ScheduleDraft,
+  messages: ScheduleValidation,
+): {
   errors: ScheduleValidation;
   input: UpdateScheduleInput | null;
 } {
   const errors: ScheduleValidation = {};
-  if (!draft.localStartTime) errors.localStartTime = 'Choose a Match time.';
-  if (!draft.timeZone.trim()) errors.timeZone = 'Enter a time zone.';
-  if (!draft.sportId) errors.sportId = 'Choose a Sport.';
+  if (!draft.localStartTime)
+    errors.localStartTime = messages.localStartTime ?? '';
+  if (!draft.timeZone.trim()) errors.timeZone = messages.timeZone ?? '';
+  if (!draft.sportId) errors.sportId = messages.sportId ?? '';
   if (draft.location.trim().length > 255) {
-    errors.location = 'Location must be 255 characters or fewer.';
+    errors.location = messages.location ?? '';
   }
   const horizon = Number(draft.generationHorizonDays);
   if (!/^\d+$/.test(draft.generationHorizonDays) || horizon < 1) {
-    errors.generationHorizonDays = 'Enter at least one day.';
+    errors.generationHorizonDays = messages.generationHorizonDays ?? '';
   }
   const registrationReminderMinutes = reminderDraftToMinutes(
     draft.registrationReminder,
   );
   if (registrationReminderMinutes === null) {
-    errors.registrationReminder = 'Enter a whole, non-negative reminder.';
+    errors.registrationReminder = messages.registrationReminder ?? '';
   }
   const finalReminderMinutes = reminderDraftToMinutes(draft.finalReminder);
   if (finalReminderMinutes === null) {
-    errors.finalReminder = 'Enter a whole, non-negative reminder.';
+    errors.finalReminder = messages.finalReminder ?? '';
   }
 
   if (
@@ -540,13 +536,7 @@ function validateScheduleDraft(draft: ScheduleDraft): {
 }
 
 const styles = StyleSheet.create({
-  screen: { gap: spacing.xxl },
-  topBar: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  heading: { gap: spacing.sm, marginTop: spacing.lg, maxWidth: 620 },
+  screen: { gap: spacing.lg },
   form: { gap: spacing.lg, maxWidth: layout.formMaxWidth, width: '100%' },
   section: { gap: spacing.md },
   stateCard: { gap: spacing.md },

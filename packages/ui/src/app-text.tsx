@@ -1,7 +1,8 @@
 import type { ComponentProps, ReactNode } from 'react';
-import { StyleSheet, Text } from 'react-native';
+import { Text } from 'react-native';
 
-import { colors, typography } from './theme';
+import { typography } from './theme';
+import { useTheme } from './theme-provider';
 
 export type TextVariant = keyof typeof typography;
 export type TextTone = 'default' | 'muted' | 'subtle' | 'brand' | 'error';
@@ -17,17 +18,18 @@ export function AppText({
   variant?: TextVariant;
   tone?: TextTone;
 }) {
+  const { colors } = useTheme();
+  const toneColor = {
+    default: colors.textPrimary,
+    muted: colors.textSecondary,
+    subtle: colors.textSubtle,
+    brand: colors.accent,
+    error: colors.danger,
+  }[tone];
+
   return (
-    <Text {...props} style={[typography[variant], toneStyles[tone], style]}>
+    <Text {...props} style={[typography[variant], { color: toneColor }, style]}>
       {children}
     </Text>
   );
 }
-
-const toneStyles = StyleSheet.create({
-  default: { color: colors.ink },
-  muted: { color: colors.inkMuted },
-  subtle: { color: colors.inkSubtle },
-  brand: { color: colors.brand },
-  error: { color: colors.error },
-});

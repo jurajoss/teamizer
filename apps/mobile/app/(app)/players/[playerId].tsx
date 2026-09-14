@@ -1,18 +1,18 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import {
   AppText,
   Avatar,
-  BrandLockup,
   Button,
-  colors,
   FeedbackBanner,
   radii,
   spacing,
   StatusPill,
   Surface,
+  useTheme,
 } from '@teamizer/ui';
 
 import { ApiClientError } from '../../../src/api/authenticated-api-client';
@@ -25,6 +25,7 @@ import {
   matchRouteFor,
 } from '../../../src/matches/match-flow';
 import { useAppServices } from '../../../src/providers/app-services-context';
+import { usePreferences } from '../../../src/preferences/preferences-context';
 import { statisticsQueryKeys } from '../../../src/statistics/statistics-query-keys';
 import {
   formatGoalsPerMatch,
@@ -37,6 +38,7 @@ import { AppScreen } from '../../../src/ui/app-screen';
 const PAGE_SIZE = 10;
 
 export default function PlayerDetailRoute() {
+  const { t } = useTranslation();
   const parameters = useLocalSearchParams<{
     playerId?: string | string[];
   }>();
@@ -65,8 +67,8 @@ export default function PlayerDetailRoute() {
       <PlayerPageFrame>
         <FeedbackBanner
           tone="error"
-          title="Player unavailable"
-          message="This Player link is missing a valid Player ID."
+          title={t('playerDetail.unavailable')}
+          message={t('playerDetail.missingId')}
         />
       </PlayerPageFrame>
     );
@@ -76,10 +78,7 @@ export default function PlayerDetailRoute() {
     return (
       <PlayerPageFrame>
         <Surface tone="muted" style={styles.stateCard}>
-          <AppText variant="heading">Loading Player…</AppText>
-          <AppText tone="muted">
-            Checking authoritative statistics and recent results.
-          </AppText>
+          <AppText variant="heading">{t('playerDetail.loading')}</AppText>
         </Surface>
       </PlayerPageFrame>
     );
@@ -93,16 +92,18 @@ export default function PlayerDetailRoute() {
       <PlayerPageFrame>
         <FeedbackBanner
           tone="error"
-          title={notFound ? 'Player unavailable' : 'Player could not load'}
-          message={
+          title={
             notFound
-              ? 'This Player does not exist.'
-              : 'Check your connection and try again.'
+              ? t('playerDetail.unavailable')
+              : t('playerDetail.loadFailed')
+          }
+          message={
+            notFound ? t('playerDetail.notFound') : t('common.connectionRetry')
           }
         />
         {!notFound ? (
           <Button
-            label="Try again"
+            label={t('common.retry')}
             onPress={() => void detailQuery.refetch()}
             variant="secondary"
           />
@@ -130,67 +131,75 @@ export default function PlayerDetailRoute() {
 
 function PlayerPageFrame({ children }: { children: React.ReactNode }) {
   return (
-    <AppScreen scroll contentStyle={styles.screen}>
-      <View style={styles.topBar}>
-        <BrandLockup compact />
-        <Button
-          fullWidth={false}
-          label="Back"
-          onPress={() => returnToRanking()}
-          variant="ghost"
-        />
-      </View>
+    <AppScreen scroll underHeader contentStyle={styles.screen}>
       {children}
     </AppScreen>
   );
 }
 
 function PlayerHeading({ player }: { player: PlayerDetail }) {
+  const { t } = useTranslation();
   return (
     <View style={styles.heading}>
       <Avatar name={player.name} size="large" url={player.avatarUrl} />
       <View style={styles.headingCopy}>
         <View style={styles.headingPills}>
           <StatusPill
-            label={player.status}
+            label={
+              player.status === 'ACTIVE'
+                ? t('status.active')
+                : t('status.inactive')
+            }
             tone={player.status === 'ACTIVE' ? 'success' : 'neutral'}
           />
           {player.type === 'GUEST' ? (
-            <StatusPill label="GUEST" tone="neutral" />
+            <StatusPill label={t('status.guest')} tone="neutral" />
           ) : null}
         </View>
         <AppText accessibilityRole="header" variant="title">
           {player.name}
         </AppText>
-        <AppText tone="muted">Performance from completed Matches only.</AppText>
+        <AppText tone="muted">{t('playerDetail.performanceOnly')}</AppText>
       </View>
     </View>
   );
 }
 
 function StatisticsSummary({ player }: { player: PlayerDetail }) {
+  const { t } = useTranslation();
+  const { colors } = useTheme();
+  const { language } = usePreferences();
   const { statistics } = player;
   const metrics = [
-    ['Matches', String(statistics.matches)],
-    ['Win rate', formatWinRate(statistics.winRate)],
-    ['Wins', String(statistics.wins)],
-    ['Draws', String(statistics.draws)],
-    ['Losses', String(statistics.losses)],
-    ['Goals', String(statistics.goals)],
-    ['Goals / Match', formatGoalsPerMatch(statistics.goalsPerMatch)],
+    [t('common.matches'), String(statistics.matches)],
+    [t('common.winRate'), formatWinRate(statistics.winRate, language)],
+    [t('common.wins'), String(statistics.wins)],
+    [t('common.draws'), String(statistics.draws)],
+    [t('common.losses'), String(statistics.losses)],
+    [t('common.goals'), String(statistics.goals)],
+    [
+      t('common.goalsPerMatch'),
+      formatGoalsPerMatch(statistics.goalsPerMatch, language),
+    ],
   ] as const;
 
   return (
     <Surface style={styles.summary}>
       <View style={styles.sectionHeading}>
         <AppText variant="eyebrow" tone="brand">
-          PERFORMANCE
+          {t('playerDetail.performance').toUpperCase()}
         </AppText>
-        <AppText variant="heading">Career statistics</AppText>
+        <AppText variant="heading">{t('playerDetail.career')}</AppText>
       </View>
       <View style={styles.summaryGrid}>
         {metrics.map(([label, value]) => (
-          <View key={label} style={styles.summaryMetric}>
+          <View
+            key={label}
+            style={[
+              styles.summaryMetric,
+              { backgroundColor: colors.surfaceSubtle },
+            ]}
+          >
             <AppText variant="title">{value}</AppText>
             <AppText variant="caption" tone="muted">
               {label}
@@ -219,39 +228,43 @@ function MatchHistory({
   onLoadMore(): void;
   onRetry(): void;
 }) {
+  const { t } = useTranslation();
   const state = statisticsViewState(loading, error, matches.length);
 
   return (
     <View style={styles.historySection}>
       <View style={styles.sectionHeading}>
         <AppText variant="eyebrow" tone="brand">
-          RECENT MATCHES
+          {t('playerDetail.recent').toUpperCase()}
         </AppText>
-        <AppText variant="heading">Finished-Match history</AppText>
+        <AppText variant="heading">{t('playerDetail.history')}</AppText>
       </View>
 
       {state === 'loading' ? (
         <Surface tone="muted" style={styles.stateCard}>
-          <AppText variant="bodyStrong">Loading Match history…</AppText>
-          <AppText tone="muted">Reading completed results.</AppText>
+          <AppText variant="bodyStrong">
+            {t('playerDetail.historyLoading')}
+          </AppText>
         </Surface>
       ) : null}
       {state === 'error' ? (
         <View style={styles.stateCard}>
           <FeedbackBanner
             tone="error"
-            title="History unavailable"
-            message="The Player statistics loaded, but recent Matches did not."
+            title={t('playerDetail.historyUnavailable')}
+            message={t('playerDetail.historyError')}
           />
-          <Button label="Try again" onPress={onRetry} variant="secondary" />
+          <Button
+            label={t('common.retry')}
+            onPress={onRetry}
+            variant="secondary"
+          />
         </View>
       ) : null}
       {state === 'empty' ? (
         <Surface tone="muted" style={styles.stateCard}>
-          <AppText variant="bodyStrong">No finished Matches yet</AppText>
-          <AppText tone="muted">
-            Win rate and goals per Match remain N/A until the first result.
-          </AppText>
+          <AppText variant="bodyStrong">{t('playerDetail.noHistory')}</AppText>
+          <AppText tone="muted">{t('playerDetail.noHistoryHint')}</AppText>
         </Surface>
       ) : null}
       {state === 'success' ? (
@@ -262,7 +275,7 @@ function MatchHistory({
           {hasMore ? (
             <Button
               busy={fetchingMore}
-              label="Load more Matches"
+              label={t('playerDetail.loadMore')}
               onPress={onLoadMore}
               variant="secondary"
             />
@@ -274,6 +287,9 @@ function MatchHistory({
 }
 
 function HistoryCard({ match }: { match: PlayerMatchHistoryItem }) {
+  const { t } = useTranslation();
+  const { colors } = useTheme();
+  const { language } = usePreferences();
   const { width } = useWindowDimensions();
   const goals = new Map(
     match.playerGoals.map(({ playerId, goals }) => [playerId, goals]),
@@ -283,10 +299,10 @@ function HistoryCard({ match }: { match: PlayerMatchHistoryItem }) {
   );
   const resultLabel =
     match.subjectResult === 'WIN'
-      ? 'WIN'
+      ? t('status.win')
       : match.subjectResult === 'LOSS'
-        ? 'LOSS'
-        : 'DRAW';
+        ? t('status.loss')
+        : t('status.draw');
 
   return (
     <Surface style={styles.historyCard}>
@@ -294,28 +310,32 @@ function HistoryCard({ match }: { match: PlayerMatchHistoryItem }) {
         <View style={styles.matchMeta}>
           <AppText variant="bodyStrong">{match.sport.name}</AppText>
           <AppText variant="caption" tone="muted">
-            {formatMatchDate(match.startsAt)}
+            {formatMatchDate(match.startsAt, language)}
             {match.location ? ` · ${match.location}` : ''}
           </AppText>
         </View>
         <StatusPill
           label={resultLabel}
-          tone={resultLabel === 'WIN' ? 'success' : 'neutral'}
+          tone={match.subjectResult === 'WIN' ? 'success' : 'neutral'}
         />
       </View>
 
       <View
-        accessibilityLabel={`Final score Team A ${match.score.teamA}, Team B ${match.score.teamB}`}
+        accessibilityLabel={t('playerDetail.finalScore', {
+          teamA: match.score.teamA,
+          teamB: match.score.teamB,
+        })}
         style={styles.finalScore}
       >
         <AppText variant="eyebrow" tone="muted">
-          FINAL
+          {t('playerDetail.final')}
         </AppText>
         <AppText variant="title">
-          Team A {match.score.teamA}–{match.score.teamB} Team B
+          {t('common.team', { side: 'A' })} {match.score.teamA}–
+          {match.score.teamB} {t('common.team', { side: 'B' })}
         </AppText>
         <AppText variant="caption" tone="muted">
-          Player goals: {match.subjectGoals}
+          {t('playerDetail.playerGoals', { count: match.subjectGoals })}
         </AppText>
       </View>
 
@@ -325,13 +345,23 @@ function HistoryCard({ match }: { match: PlayerMatchHistoryItem }) {
             <View
               style={[
                 styles.teamLabel,
-                team.side === 'A' ? styles.teamALabel : styles.teamBLabel,
+                {
+                  backgroundColor:
+                    team.side === 'A'
+                      ? colors.teamASurface
+                      : colors.teamBSurface,
+                },
               ]}
             >
-              <AppText variant="label">Team {team.side}</AppText>
+              <AppText variant="label">
+                {t('common.team', { side: team.side })}
+              </AppText>
             </View>
             {team.players.map((player) => (
-              <View key={player.id} style={styles.playerRow}>
+              <View
+                key={player.id}
+                style={[styles.playerRow, { borderBottomColor: colors.border }]}
+              >
                 <Avatar
                   name={player.name}
                   size="small"
@@ -341,13 +371,12 @@ function HistoryCard({ match }: { match: PlayerMatchHistoryItem }) {
                   <AppText variant="bodyStrong">{player.name}</AppText>
                   {player.type === 'GUEST' ? (
                     <AppText variant="caption" tone="muted">
-                      Guest
+                      {t('common.guest')}
                     </AppText>
                   ) : null}
                 </View>
                 <AppText variant="caption" tone="muted">
-                  {goals.get(player.id) ?? 0}{' '}
-                  {(goals.get(player.id) ?? 0) === 1 ? 'goal' : 'goals'}
+                  {t('common.goalCount', { count: goals.get(player.id) ?? 0 })}
                 </AppText>
               </View>
             ))}
@@ -356,7 +385,7 @@ function HistoryCard({ match }: { match: PlayerMatchHistoryItem }) {
       </View>
 
       <Button
-        label="Open full result"
+        label={t('playerDetail.openResult')}
         onPress={() => router.push(matchRouteFor(match.id))}
         variant="secondary"
       />
@@ -364,23 +393,12 @@ function HistoryCard({ match }: { match: PlayerMatchHistoryItem }) {
   );
 }
 
-function returnToRanking(): void {
-  if (router.canGoBack()) router.back();
-  else router.replace('/statistics');
-}
-
 const styles = StyleSheet.create({
-  screen: { gap: spacing.xxl },
-  topBar: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
+  screen: { gap: spacing.lg },
   heading: {
     alignItems: 'center',
     flexDirection: 'row',
     gap: spacing.lg,
-    marginTop: spacing.lg,
   },
   headingPills: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   headingCopy: { flex: 1, gap: spacing.xs, minWidth: 0 },
@@ -388,7 +406,6 @@ const styles = StyleSheet.create({
   summary: { gap: spacing.xl },
   summaryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
   summaryMetric: {
-    backgroundColor: colors.surfaceMuted,
     borderRadius: radii.md,
     flexBasis: 132,
     flexGrow: 1,
@@ -416,11 +433,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
-  teamALabel: { backgroundColor: colors.teamASoft },
-  teamBLabel: { backgroundColor: colors.teamBSoft },
   playerRow: {
     alignItems: 'center',
-    borderBottomColor: colors.border,
     borderBottomWidth: 1,
     flexDirection: 'row',
     gap: spacing.sm,

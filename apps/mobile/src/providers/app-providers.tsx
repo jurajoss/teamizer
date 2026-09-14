@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useEffect, useState, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { AuthenticatedApiClient } from '../api/authenticated-api-client';
 import type { FirebaseAuthClient } from '../auth/auth-client';
@@ -16,6 +17,7 @@ import {
 import { NotificationLifecycle } from '../notifications/notification-lifecycle';
 import { createNotificationPlatform } from '../notifications/notification-platform';
 import { NotificationRegistration } from '../notifications/notification-registration';
+import { PreferencesProvider } from '../preferences/preferences-context';
 import { SessionProvider } from '../session/session-context';
 import { SqliteScoringDraftRepository } from '../scoring/sqlite-scoring-draft-repository';
 import { FoundationScreen } from '../ui/foundation-screen';
@@ -31,9 +33,18 @@ type ApplicationDependencies = {
 type ProviderState =
   | { status: 'STARTING' }
   | { status: 'READY'; dependencies: ApplicationDependencies }
-  | { status: 'ERROR'; message: string };
+  | { status: 'ERROR' };
 
 export function AppProviders({ children }: { children: ReactNode }) {
+  return (
+    <PreferencesProvider storage={AsyncStorage}>
+      <ConfiguredAppProviders>{children}</ConfiguredAppProviders>
+    </PreferencesProvider>
+  );
+}
+
+function ConfiguredAppProviders({ children }: { children: ReactNode }) {
+  const { t } = useTranslation();
   const [state, setState] = useState<ProviderState>({ status: 'STARTING' });
 
   useEffect(() => {
@@ -50,11 +61,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
           dependencies: createDependencies(loadMobileEnvironment()),
         });
       } catch {
-        setState({
-          status: 'ERROR',
-          message:
-            'Mobile configuration is incomplete. Check apps/mobile/.env and restart Expo.',
-        });
+        setState({ status: 'ERROR' });
       }
     });
 
@@ -64,14 +71,14 @@ export function AppProviders({ children }: { children: ReactNode }) {
   }, []);
 
   if (state.status === 'STARTING') {
-    return <FoundationScreen message="Starting Teamizer…" />;
+    return <FoundationScreen message={t('foundation.starting')} />;
   }
 
   if (state.status === 'ERROR') {
     return (
       <FoundationScreen
-        title="Configuration required"
-        message={state.message}
+        title={t('foundation.configTitle')}
+        message={t('foundation.configError')}
       />
     );
   }

@@ -1,5 +1,6 @@
 import { Redirect, type Href } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import {
   AppText,
@@ -15,6 +16,7 @@ import { AppScreen } from '../src/ui/app-screen';
 import { FoundationScreen } from '../src/ui/foundation-screen';
 
 export default function SessionEntryScreen() {
+  const { t } = useTranslation();
   const { state, retry, signOut } = useSession();
   const destination = destinationForSession(state);
 
@@ -28,8 +30,8 @@ export default function SessionEntryScreen() {
         busy
         message={
           state.status === 'RESTORING'
-            ? 'Restoring your secure session…'
-            : 'Checking your Teamizer profile…'
+            ? t('auth.restoring')
+            : t('auth.checking')
         }
       />
     );
@@ -40,26 +42,23 @@ export default function SessionEntryScreen() {
       <BrandLockup />
       <View style={styles.copy}>
         <AppText accessibilityRole="header" variant="title">
-          Let’s get you back in
+          {t('auth.recoveryTitle')}
         </AppText>
-        <AppText tone="muted">
-          Your session is still safe. Teamizer just needs to check your account
-          again.
-        </AppText>
+        <AppText tone="muted">{t('auth.recoveryText')}</AppText>
       </View>
       <FeedbackBanner
         tone="error"
-        title="Unable to continue"
-        message={state.message}
+        title={t('auth.unable')}
+        message={t('errors.generic')}
       />
       <View style={styles.actions}>
         <Button
-          label="Try again"
+          label={t('common.retry')}
           onPress={retry}
           testID="session-retry-button"
         />
         <Button
-          label="Sign out"
+          label={t('common.signOut')}
           onPress={() => void signOut().catch(() => undefined)}
           variant="secondary"
         />

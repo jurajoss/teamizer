@@ -1,0 +1,41 @@
+import type { TFunction } from 'i18next';
+
+import { ApiClientError } from '../api/authenticated-api-client';
+
+const knownErrorCodes = new Set([
+  'NETWORK_ERROR',
+  'UNAUTHENTICATED',
+  'AUTH_SESSION_UNAVAILABLE',
+  'FORBIDDEN',
+  'PLAYER_INACTIVE',
+  'RESOURCE_NOT_FOUND',
+  'MATCH_NOT_OPEN',
+  'MATCH_NOT_IN_PROGRESS',
+  'MATCH_ALREADY_FINISHED',
+  'MATCH_CANCELLED',
+  'ATTENDANCE_LOCKED',
+  'CONCURRENT_STATE_CHANGE',
+  'PROPOSAL_RECEIPT_INVALID',
+  'INVALID_TEAM_COMPOSITION',
+  'INSUFFICIENT_GOING_PLAYERS',
+  'INVALID_SCORE',
+  'INVALID_PLAYER_GOALS',
+  'GOAL_TOTAL_MISMATCH',
+  'INVALID_API_RESPONSE',
+  'INVALID_ERROR_RESPONSE',
+  'FIREBASE_IDENTITY_NOT_FOUND',
+  'AUTH_PROVIDER_ALREADY_LINKED',
+  'PLAYER_ALREADY_HAS_USER',
+  'IDENTITY_PROVIDER_UNAVAILABLE',
+]);
+
+export function localizedErrorMessage(
+  error: unknown,
+  t: TFunction,
+  fallbackKey = 'errors.generic',
+): string {
+  if (error instanceof ApiClientError && knownErrorCodes.has(error.code)) {
+    return t(`errors.${error.code}`);
+  }
+  return t(fallbackKey);
+}

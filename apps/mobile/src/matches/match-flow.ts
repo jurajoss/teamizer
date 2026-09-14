@@ -40,8 +40,8 @@ export function matchRouteFor(matchId: string): `/matches/${string}` {
   return `/matches/${matchId}`;
 }
 
-export function formatMatchDate(value: string): string {
-  return new Intl.DateTimeFormat(undefined, {
+export function formatMatchDate(value: string, locale?: string): string {
+  return new Intl.DateTimeFormat(locale, {
     timeZone: 'Europe/Prague',
     weekday: 'short',
     month: 'short',

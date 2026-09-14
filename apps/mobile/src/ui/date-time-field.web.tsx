@@ -2,7 +2,7 @@ import type { ChangeEvent, CSSProperties } from 'react';
 import { createElement } from 'react';
 import { View } from 'react-native';
 
-import { AppText, colors, radii, spacing, typography } from '@teamizer/ui';
+import { AppText, radii, spacing, typography, useTheme } from '@teamizer/ui';
 
 import {
   parseDateTimeInput,
@@ -28,6 +28,7 @@ export function DateTimeField({
   hint,
   minimumDate,
 }: DateTimeFieldProps) {
+  const { colors } = useTheme();
   const inputValue = value ? serializeDateTimeInput(value, mode) : '';
   const onInputChange = (event: ChangeEvent<HTMLInputElement>) => {
     const parsed = parseDateTimeInput(event.currentTarget.value, mode);
@@ -45,7 +46,12 @@ export function DateTimeField({
             : undefined,
         onChange: onInputChange,
         step: mode === 'time' ? 60 : undefined,
-        style: inputStyle,
+        style: {
+          ...inputStyle,
+          backgroundColor: colors.surface,
+          border: `1px solid ${colors.borderStrong}`,
+          color: colors.textPrimary,
+        },
         type: mode,
         value: inputValue,
       })}
@@ -59,11 +65,8 @@ export function DateTimeField({
 }
 
 const inputStyle: CSSProperties = {
-  backgroundColor: colors.surface,
-  border: `1px solid ${colors.borderStrong}`,
   borderRadius: radii.md,
   boxSizing: 'border-box',
-  color: colors.ink,
   fontSize: typography.body.fontSize,
   lineHeight: `${typography.body.lineHeight}px`,
   minHeight: 52,

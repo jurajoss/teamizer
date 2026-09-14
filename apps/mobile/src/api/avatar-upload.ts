@@ -17,33 +17,19 @@ export type WebAvatarUpload = {
 
 export type AvatarUpload = NativeAvatarUpload | WebAvatarUpload;
 
-type ReactNativeMultipartFile = {
-  uri: string;
-  name: string;
-  type: string;
+export type AvatarUploadTransport = {
+  prepareBody(upload: AvatarUpload): BodyInit;
+  send(input: string, init: RequestInit): Promise<Response>;
 };
 
-type NativeFileAppender = (
-  fieldName: string,
-  file: ReactNativeMultipartFile,
-) => void;
-
-export function appendAvatarUpload(form: FormData, upload: AvatarUpload): void {
-  if (upload.kind === 'WEB_BLOB') {
-    form.append('file', upload.blob, upload.fileName);
-    return;
+export function createWebAvatarUploadBody(upload: AvatarUpload): FormData {
+  if (upload.kind !== 'WEB_BLOB') {
+    throw new Error('Web avatar upload requires a browser Blob.');
   }
 
-  // React Native 0.86 FormData supports this native file descriptor directly.
-  // Its DOM-compatible TypeScript overload does not expose that runtime shape.
-  const appendNativeFile = form.append.bind(
-    form,
-  ) as unknown as NativeFileAppender;
-  appendNativeFile('file', {
-    uri: upload.uri,
-    name: upload.fileName,
-    type: upload.mimeType,
-  });
+  const form = new FormData();
+  form.append('file', upload.blob, upload.fileName);
+  return form;
 }
 
 export function nativeAvatarUpload(uri: string): NativeAvatarUpload {

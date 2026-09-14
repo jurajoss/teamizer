@@ -7,6 +7,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AvatarImageService } from './avatar-image.service';
 import { AVATAR_STORAGE, type AvatarStorage } from './avatar-storage';
 
+const AVATAR_REPLACEMENT_TRANSACTION_TIMEOUT_MS = 30_000;
+
 @Injectable()
 export class AvatarService {
   private readonly logger = new Logger(AvatarService.name);
@@ -29,29 +31,37 @@ export class AvatarService {
   ): Promise<void> {
     this.authorize(playerId, actor);
     const normalized = await this.images.normalize(file);
-    const newStorageKey = await this.storage.store(playerId, normalized);
 
+    let newStorageKey: string | null = null;
     let oldStorageKey: string | null;
     try {
-      oldStorageKey = await this.prisma.$transaction(async (transaction) => {
-        await transaction.$queryRaw`SELECT "id" FROM "Player" WHERE "id" = ${playerId}::uuid FOR UPDATE`;
-        const player = await transaction.player.findUnique({
-          where: { id: playerId },
-          select: { avatarStorageKey: true },
-        });
-        if (!player) throw this.notFound();
-        await transaction.player.update({
-          where: { id: playerId },
-          data: {
-            avatarStorageKey: newStorageKey,
-            avatarContentType: 'image/jpeg',
-            avatarUpdatedAt: now,
-          },
-        });
-        return player.avatarStorageKey;
-      });
+      oldStorageKey = await this.prisma.$transaction(
+        async (transaction) => {
+          await transaction.$queryRaw`SELECT "id" FROM "Player" WHERE "id" = ${playerId}::uuid FOR UPDATE`;
+          const player = await transaction.player.findUnique({
+            where: { id: playerId },
+            select: { avatarStorageKey: true },
+          });
+          if (!player) throw this.notFound();
+          newStorageKey = await this.storage.store(
+            playerId,
+            normalized,
+            player.avatarStorageKey,
+          );
+          await transaction.player.update({
+            where: { id: playerId },
+            data: {
+              avatarStorageKey: newStorageKey,
+              avatarContentType: 'image/jpeg',
+              avatarUpdatedAt: now,
+            },
+          });
+          return player.avatarStorageKey;
+        },
+        { timeout: AVATAR_REPLACEMENT_TRANSACTION_TIMEOUT_MS },
+      );
     } catch (error) {
-      await this.deleteBestEffort(newStorageKey);
+      if (newStorageKey) await this.deleteBestEffort(newStorageKey);
       throw error;
     }
     if (oldStorageKey && oldStorageKey !== newStorageKey) {

@@ -6,6 +6,7 @@ import {
   AVATAR_UPLOAD_MEDIA_TYPE,
   type WebAvatarUpload,
 } from '../api/avatar-upload';
+import { logAvatarUploadStage } from '../api/avatar-upload-stage';
 import { validatePreparedAvatar } from './avatar-policy';
 
 const CLIENT_AVATAR_LONG_EDGE = 1_280;
@@ -15,12 +16,14 @@ export type PreparedAvatar = WebAvatarUpload;
 export async function prepareAvatar(
   source: 'CAMERA' | 'LIBRARY',
 ): Promise<PreparedAvatar | null> {
+  logAvatarUploadStage('picker_started');
   const result = await (source === 'CAMERA'
     ? ImagePicker.launchCameraAsync(pickerOptions)
     : ImagePicker.launchImageLibraryAsync(pickerOptions));
   if (result.canceled) return null;
   const asset = result.assets[0];
   if (!asset) throw new Error('The selected photo could not be read.');
+  logAvatarUploadStage('picker_success');
   const largestEdge = Math.max(asset.width, asset.height);
   const actions: ImageManipulator.Action[] =
     largestEdge > CLIENT_AVATAR_LONG_EDGE
@@ -30,6 +33,7 @@ export async function prepareAvatar(
             : { resize: { height: CLIENT_AVATAR_LONG_EDGE } },
         ]
       : [];
+  logAvatarUploadStage('manipulation_started');
   const processed = await ImageManipulator.manipulateAsync(asset.uri, actions, {
     compress: 0.82,
     format: ImageManipulator.SaveFormat.JPEG,
@@ -44,6 +48,7 @@ export async function prepareAvatar(
       ? sourceBlob
       : new Blob([sourceBlob], { type: AVATAR_UPLOAD_MEDIA_TYPE });
   validatePreparedAvatar(blob);
+  logAvatarUploadStage('manipulation_success');
   return {
     kind: 'WEB_BLOB',
     blob,

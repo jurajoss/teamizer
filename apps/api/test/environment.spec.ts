@@ -19,6 +19,7 @@ describe('validateEnvironment', () => {
       SCHEDULER_ENABLED: true,
       SCHEDULER_TICK_INTERVAL_MS: 60_000,
       PUSH_PROVIDER_TIMEOUT_MS: 30_000,
+      AVATAR_STORAGE_DRIVER: 'local',
       AVATAR_STORAGE_DIRECTORY: '.data/avatars',
       AVATAR_PUBLIC_BASE_URL: 'http://localhost:3000',
       AVATAR_URL_SECRET: validEnvironment.PROPOSAL_RECEIPT_SECRET,
@@ -106,6 +107,47 @@ describe('validateEnvironment', () => {
   });
 
   it('validates avatar storage and signed-URL configuration', () => {
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        AVATAR_STORAGE_DRIVER: 's3',
+      }),
+    ).toThrow('AVATAR_STORAGE_DRIVER must be local or gcs.');
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        AVATAR_STORAGE_DRIVER: 'gcs',
+      }),
+    ).toThrow(
+      'AVATAR_GCS_BUCKET_NAME is required when AVATAR_STORAGE_DRIVER is gcs.',
+    );
+    expect(
+      validateEnvironment({
+        ...validEnvironment,
+        AVATAR_STORAGE_DRIVER: 'gcs',
+        AVATAR_GCS_BUCKET_NAME: 'teamizer-test-avatars',
+        AVATAR_GCS_OBJECT_PREFIX: 'environments/test',
+      }),
+    ).toMatchObject({
+      AVATAR_STORAGE_DRIVER: 'gcs',
+      AVATAR_GCS_BUCKET_NAME: 'teamizer-test-avatars',
+      AVATAR_GCS_OBJECT_PREFIX: 'environments/test',
+    });
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        AVATAR_STORAGE_DRIVER: 'gcs',
+        AVATAR_GCS_BUCKET_NAME: 'gs://teamizer-test-avatars',
+      }),
+    ).toThrow('AVATAR_GCS_BUCKET_NAME must be a bare valid GCS bucket name.');
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        AVATAR_GCS_OBJECT_PREFIX: '../test',
+      }),
+    ).toThrow(
+      'AVATAR_GCS_OBJECT_PREFIX must be slash-separated safe path segments without leading or trailing slashes.',
+    );
     expect(() =>
       validateEnvironment({
         ...validEnvironment,

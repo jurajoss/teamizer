@@ -1,7 +1,12 @@
 import { z } from 'zod';
 
 import type { FirebaseAuthClient } from '../auth/auth-client';
-import { appendAvatarUpload, type AvatarUpload } from './avatar-upload';
+import {
+  createWebAvatarUploadBody,
+  type AvatarUpload,
+  type AvatarUploadTransport,
+} from './avatar-upload';
+import { logAvatarUploadStage } from './avatar-upload-stage';
 import {
   addParticipantInputSchema,
   addParticipantResponseSchema,
@@ -93,13 +98,28 @@ export type CompleteMatchResponse = {
   idempotentReplay: boolean;
 };
 
+type RequestKind = 'AVATAR_UPLOAD';
+
 export class AuthenticatedApiClient {
+  private readonly avatarUploadTransport: AvatarUploadTransport;
+
   constructor(
     private readonly apiUrl: string,
     private readonly authClient: Pick<FirebaseAuthClient, 'getIdToken'>,
     private readonly fetchImplementation: FetchImplementation = (input, init) =>
       fetch(input, init),
-  ) {}
+    avatarUploadTransport?: AvatarUploadTransport,
+  ) {
+    this.avatarUploadTransport = avatarUploadTransport ?? {
+      prepareBody(upload) {
+        logAvatarUploadStage('formdata_started');
+        const form = createWebAvatarUploadBody(upload);
+        logAvatarUploadStage('formdata_success');
+        return form;
+      },
+      send: (input, init) => this.fetchImplementation(input, init),
+    };
+  }
 
   getCurrentUser(): Promise<CurrentUser> {
     return this.requestData('/me', currentUserResponseSchema);
@@ -399,8 +419,9 @@ export class AuthenticatedApiClient {
     path: string,
     responseSchema: z.ZodType<T>,
     init: RequestInit = {},
+    requestKind?: RequestKind,
   ): Promise<T> {
-    return (await this.request(path, responseSchema, init)).data;
+    return (await this.request(path, responseSchema, init, requestKind)).data;
   }
 
   private uploadPlayerAvatar<T>(
@@ -409,12 +430,12 @@ export class AuthenticatedApiClient {
     responseSchema: z.ZodType<T>,
   ): Promise<T> {
     const validatedPlayerId = matchIdSchema.parse(playerId);
-    const form = new FormData();
-    appendAvatarUpload(form, upload);
+    const form = this.avatarUploadTransport.prepareBody(upload);
     return this.requestData(
       `/players/${validatedPlayerId}/avatar`,
       responseSchema,
       { method: 'POST', body: form },
+      'AVATAR_UPLOAD',
     );
   }
 
@@ -434,28 +455,35 @@ export class AuthenticatedApiClient {
     path: string,
     responseSchema: z.ZodType<T>,
     init: RequestInit = {},
+    requestKind?: RequestKind,
   ): Promise<{ data: T; response: Response }> {
-    return this.authorizedFetch(path, init, async (response) => {
-      const responseBody = await this.readJson(response);
-      const parsedResponse = responseSchema.safeParse(responseBody);
+    return this.authorizedFetch(
+      path,
+      init,
+      async (response) => {
+        const responseBody = await this.readJson(response);
+        const parsedResponse = responseSchema.safeParse(responseBody);
 
-      if (!parsedResponse.success) {
-        throw new ApiClientError(
-          response.status,
-          'INVALID_API_RESPONSE',
-          'The Teamizer API returned an invalid response.',
-          { cause: parsedResponse.error },
-        );
-      }
+        if (!parsedResponse.success) {
+          throw new ApiClientError(
+            response.status,
+            'INVALID_API_RESPONSE',
+            'The Teamizer API returned an invalid response.',
+            { cause: parsedResponse.error },
+          );
+        }
 
-      return { data: parsedResponse.data, response };
-    });
+        return { data: parsedResponse.data, response };
+      },
+      requestKind,
+    );
   }
 
   private async authorizedFetch<T>(
     path: string,
     init: RequestInit,
     readSuccess: (response: Response) => Promise<T>,
+    requestKind?: RequestKind,
   ): Promise<T> {
     let token: string;
 
@@ -477,11 +505,16 @@ export class AuthenticatedApiClient {
     }
 
     let response: Response;
+    if (requestKind === 'AVATAR_UPLOAD') {
+      logAvatarUploadStage('request_started');
+    }
     try {
-      response = await this.fetchImplementation(`${this.apiUrl}${path}`, {
-        ...init,
-        headers,
-      });
+      const url = `${this.apiUrl}${path}`;
+      const requestInit = { ...init, headers };
+      response =
+        requestKind === 'AVATAR_UPLOAD'
+          ? await this.avatarUploadTransport.send(url, requestInit)
+          : await this.fetchImplementation(url, requestInit);
     } catch (error) {
       throw new ApiClientError(
         0,
@@ -491,6 +524,9 @@ export class AuthenticatedApiClient {
           cause: error,
         },
       );
+    }
+    if (requestKind === 'AVATAR_UPLOAD') {
+      logAvatarUploadStage('response_received');
     }
 
     if (!response.ok) {

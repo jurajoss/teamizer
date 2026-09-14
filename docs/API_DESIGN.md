@@ -277,10 +277,13 @@ attribute-free `PlayerPublicDto` shown above, even when it represents them.
 - **204:** clears the object-storage reference. The underlying object may be
   removed asynchronously after the database update.
 
-The development adapter stores normalized files in a configured local
-directory and serves them through expiring HMAC-signed URLs. Production may
-replace the adapter with managed object storage; storage credentials and object
-keys are never accepted from mobile clients.
+The local development adapter stores normalized files in a configured local
+directory. TEST/production use a private Google Cloud Storage adapter selected
+by configuration. Both serve through the same API-hosted expiring HMAC-signed
+URLs; storage credentials, bucket permissions, and object keys are never
+accepted from mobile clients. GCS replacement keys include an object generation
+for cache invalidation and use two bounded physical slots per Player so cleanup
+failures cannot cause unbounded live-object growth.
 
 ### `POST /players/:playerId/convert-to-user`
 

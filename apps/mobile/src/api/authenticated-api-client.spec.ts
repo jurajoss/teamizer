@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { FetchImplementation } from './authenticated-api-client';
 import { AuthenticatedApiClient } from './authenticated-api-client';
+import type { AvatarUploadTransport } from './avatar-upload';
 import type { OnboardingInput } from './contracts';
 
 const currentUserResponse = {
@@ -856,6 +857,130 @@ describe('AuthenticatedApiClient', () => {
     expect(fetchImplementation.mock.calls[1]?.[1]).toMatchObject({
       method: 'DELETE',
     });
+  });
+
+  it('routes native avatar upload through its transport while retaining auth and API URL', async () => {
+    const stageLog = vi
+      .spyOn(console, 'info')
+      .mockImplementation(() => undefined);
+    const playerId = currentUserResponse.player.id;
+    const response = jsonResponse({
+      ...currentUserResponse.player,
+      avatarUrl: 'https://avatars.example.test/player.jpg',
+      statistics: {
+        matches: 0,
+        wins: 0,
+        draws: 0,
+        losses: 0,
+        winRate: null,
+        goals: 0,
+        goalsPerMatch: null,
+      },
+    });
+    const body = new FormData();
+    const avatarTransport: AvatarUploadTransport = {
+      prepareBody: vi.fn().mockReturnValue(body),
+      send: vi.fn().mockResolvedValue(response),
+    };
+    const fetchImplementation = vi.fn<FetchImplementation>();
+    const client = new AuthenticatedApiClient(
+      'https://api.example.test',
+      { getIdToken: vi.fn().mockResolvedValue('fresh-token') },
+      fetchImplementation,
+      avatarTransport,
+    );
+    const upload = {
+      kind: 'NATIVE_FILE',
+      uri: 'file:///cache/normalized-avatar.jpg',
+      fileName: 'avatar.jpg',
+      mimeType: 'image/jpeg',
+    } as const;
+
+    try {
+      await client.uploadOwnPlayerAvatar(playerId, upload);
+
+      expect(avatarTransport.prepareBody).toHaveBeenCalledWith(upload);
+      expect(avatarTransport.send).toHaveBeenCalledOnce();
+      expect(fetchImplementation).not.toHaveBeenCalled();
+      const [url, uploadInit] =
+        vi.mocked(avatarTransport.send).mock.calls[0] ?? [];
+      expect(url).toBe(`https://api.example.test/players/${playerId}/avatar`);
+      expect(uploadInit?.method).toBe('POST');
+      expect(uploadInit?.body).toBe(body);
+      expect(typeof uploadInit?.body).not.toBe('string');
+      const headers = new Headers(uploadInit?.headers);
+      expect(headers.get('Content-Type')).toBeNull();
+      expect(headers.get('Authorization')).toBe('Bearer fresh-token');
+      expect(stageLog.mock.calls.map(([message]) => message)).toEqual([
+        'AVATAR_STAGE=request_started',
+        'AVATAR_STAGE=response_received',
+      ]);
+    } finally {
+      stageLog.mockRestore();
+    }
+  });
+
+  it('classifies an avatar network error only after request_started', async () => {
+    const stageLog = vi
+      .spyOn(console, 'info')
+      .mockImplementation(() => undefined);
+    const avatarTransport: AvatarUploadTransport = {
+      prepareBody: vi.fn().mockReturnValue(new FormData()),
+      send: vi.fn().mockRejectedValue(new Error('offline')),
+    };
+    const fetchImplementation = vi.fn<FetchImplementation>();
+    const client = new AuthenticatedApiClient(
+      'https://api.example.test',
+      { getIdToken: vi.fn().mockResolvedValue('token') },
+      fetchImplementation,
+      avatarTransport,
+    );
+
+    try {
+      await expect(
+        client.uploadOwnPlayerAvatar(currentUserResponse.player.id, {
+          kind: 'NATIVE_FILE',
+          uri: 'file:///cache/normalized-avatar.jpg',
+          fileName: 'avatar.jpg',
+          mimeType: 'image/jpeg',
+        }),
+      ).rejects.toMatchObject({ code: 'NETWORK_ERROR', status: 0 });
+      expect(avatarTransport.send).toHaveBeenCalledOnce();
+      expect(fetchImplementation).not.toHaveBeenCalled();
+      expect(stageLog.mock.calls.map(([message]) => message)).toEqual([
+        'AVATAR_STAGE=request_started',
+      ]);
+    } finally {
+      stageLog.mockRestore();
+    }
+  });
+
+  it('does not call either transport when native file preparation fails', () => {
+    const preparationError = new Error('Expo File is unreadable');
+    const avatarTransport: AvatarUploadTransport = {
+      prepareBody: vi.fn(() => {
+        throw preparationError;
+      }),
+      send: vi.fn(),
+    };
+    const fetchImplementation = vi.fn<FetchImplementation>();
+    const client = new AuthenticatedApiClient(
+      'https://api.example.test',
+      { getIdToken: vi.fn().mockResolvedValue('token') },
+      fetchImplementation,
+      avatarTransport,
+    );
+
+    expect(() =>
+      client.uploadOwnPlayerAvatar(currentUserResponse.player.id, {
+        kind: 'NATIVE_FILE',
+        uri: 'file:///cache/normalized-avatar.jpg',
+        fileName: 'avatar.jpg',
+        mimeType: 'image/jpeg',
+      }),
+    ).toThrow(preparationError);
+    expect(avatarTransport.send).not.toHaveBeenCalled();
+    expect(fetchImplementation).not.toHaveBeenCalled();
   });
 
   it('rejects private fields in the own-profile client contract before sending', () => {

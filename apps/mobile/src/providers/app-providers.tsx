@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { AuthenticatedApiClient } from '../api/authenticated-api-client';
+import { createAvatarUploadTransport } from '../api/avatar-upload-transport';
 import type { FirebaseAuthClient } from '../auth/auth-client';
 import { createFirebaseAuthClient } from '../auth/firebase-auth-client';
 import {
@@ -114,7 +115,12 @@ function createDependencies(
     },
   });
   const authClient = createFirebaseAuthClient(environment.firebase);
-  const apiClient = new AuthenticatedApiClient(environment.apiUrl, authClient);
+  const apiClient = new AuthenticatedApiClient(
+    environment.apiUrl,
+    authClient,
+    undefined,
+    createAvatarUploadTransport(),
+  );
   const scoringDraftRepository = new SqliteScoringDraftRepository();
   const notificationRegistration = new NotificationRegistration(
     apiClient,

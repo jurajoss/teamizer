@@ -5,6 +5,7 @@ import {
   nativeAvatarUpload,
   type NativeAvatarUpload,
 } from '../api/avatar-upload';
+import { logAvatarUploadStage } from '../api/avatar-upload-stage';
 
 const CLIENT_AVATAR_LONG_EDGE = 1_280;
 
@@ -13,6 +14,7 @@ export type PreparedAvatar = NativeAvatarUpload;
 export async function prepareAvatar(
   source: 'CAMERA' | 'LIBRARY',
 ): Promise<PreparedAvatar | null> {
+  logAvatarUploadStage('picker_started');
   if (source === 'CAMERA') {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
     if (!permission.granted) {
@@ -33,6 +35,7 @@ export async function prepareAvatar(
   if (result.canceled) return null;
   const asset = result.assets[0];
   if (!asset) throw new Error('The selected photo could not be read.');
+  logAvatarUploadStage('picker_success');
   const largestEdge = Math.max(asset.width, asset.height);
   const actions: ImageManipulator.Action[] =
     largestEdge > CLIENT_AVATAR_LONG_EDGE
@@ -42,11 +45,14 @@ export async function prepareAvatar(
             : { resize: { height: CLIENT_AVATAR_LONG_EDGE } },
         ]
       : [];
+  logAvatarUploadStage('manipulation_started');
   const processed = await ImageManipulator.manipulateAsync(asset.uri, actions, {
     compress: 0.82,
     format: ImageManipulator.SaveFormat.JPEG,
   });
-  return nativeAvatarUpload(processed.uri);
+  const upload = nativeAvatarUpload(processed.uri);
+  logAvatarUploadStage('manipulation_success');
+  return upload;
 }
 
 const pickerOptions: ImagePicker.ImagePickerOptions = {

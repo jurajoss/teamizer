@@ -5,6 +5,10 @@ import { useTranslation } from 'react-i18next';
 import { AppText, Avatar, Button, FeedbackBanner, spacing } from '@teamizer/ui';
 
 import { prepareAvatar, type PreparedAvatar } from './avatar-picker';
+import {
+  avatarUploadFlowErrorMessage,
+  runAvatarUploadFlow,
+} from './avatar-upload-flow';
 
 export function AvatarManager({
   busy,
@@ -24,12 +28,8 @@ export function AvatarManager({
 
   const choose = async (source: 'CAMERA' | 'LIBRARY') => {
     setMessage(null);
-    try {
-      const file = await prepareAvatar(source);
-      if (file) await onUpload(file);
-    } catch {
-      setMessage(t('profile.photoFailed'));
-    }
+    const result = await runAvatarUploadFlow(source, prepareAvatar, onUpload);
+    setMessage(avatarUploadFlowErrorMessage(result, t));
   };
 
   return (

@@ -71,15 +71,27 @@ mutations expose the five internal balancing attributes; public serializers are
 allowlists and never contain those fields.
 
 Avatar binary data is behind the focused `AvatarStorage` boundary and is never
-stored in PostgreSQL. The development adapter writes normalized JPEG objects to
-a configured local directory and returns expiring HMAC-signed display URLs.
-The database stores only the server-owned key, content type, and update time.
-Upload processing verifies the decoded format, normalizes orientation, and
-resizes/crops before storage. Native mobile first normalizes camera/library
-assets to an explicitly typed JPEG multipart part; the API nevertheless treats
-decoded bytes rather than client MIME/filename metadata as authoritative. A
-managed production object-store adapter can
-replace the development binding without changing Player or profile services.
+stored in PostgreSQL. `AVATAR_STORAGE_DRIVER=local` writes normalized JPEG
+objects to a configured local directory for development;
+`AVATAR_STORAGE_DRIVER=gcs` writes them to a private Google Cloud Storage bucket
+through Application Default Credentials for TEST and production. Both adapters
+return the existing API-hosted, expiring HMAC-signed display URLs, so clients
+never receive bucket credentials or raw bucket permissions. The database stores
+only the server-owned key, content type, and update time.
+
+Upload processing verifies the decoded format, normalizes orientation, square
+crops/resizes, and re-encodes JPEG before either adapter sees the bytes. Native
+mobile first normalizes camera/library assets to an explicitly typed JPEG
+multipart part; the API nevertheless treats decoded bytes rather than client
+MIME/filename metadata as authoritative.
+
+GCS names two bounded object slots per Player under the optional environment
+prefix: `players/<playerId>/avatar-a.jpg` and `avatar-b.jpg`. The opaque database
+key also carries the selected object's immutable GCS generation. Replacements
+write the inactive slot while holding the Player row lock, atomically switch the
+database reference, and then delete the superseded generation. This avoids URL
+cache collisions and bounds failed-cleanup remnants without changing the Player
+or profile API.
 
 Guest conversion updates the same Player row and creates only the User link, so
 attributes, avatar metadata, memberships, statistics, and history keep their

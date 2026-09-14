@@ -522,6 +522,9 @@ export const resources = {
         GOAL_TOTAL_MISMATCH: 'Player goals must equal the final score total.',
         INVALID_API_RESPONSE: 'Teamizer received an invalid server response.',
         INVALID_ERROR_RESPONSE: 'Teamizer received an invalid server response.',
+        UNSUPPORTED_AVATAR_MEDIA_TYPE: 'This photo format is not supported.',
+        INVALID_AVATAR_IMAGE: 'The uploaded photo is not a valid image.',
+        AVATAR_TOO_LARGE: 'The photo is too large to upload.',
         FIREBASE_IDENTITY_NOT_FOUND:
           'No Firebase identity with that UID exists.',
         AUTH_PROVIDER_ALREADY_LINKED:
@@ -1059,6 +1062,9 @@ export const resources = {
           'Součet gólů hráčů musí odpovídat konečnému skóre.',
         INVALID_API_RESPONSE: 'Teamizer obdržel neplatnou odpověď serveru.',
         INVALID_ERROR_RESPONSE: 'Teamizer obdržel neplatnou odpověď serveru.',
+        UNSUPPORTED_AVATAR_MEDIA_TYPE: 'Tento formát fotky není podporován.',
+        INVALID_AVATAR_IMAGE: 'Nahraná fotka není platný obrázek.',
+        AVATAR_TOO_LARGE: 'Fotka je pro nahrání příliš velká.',
         FIREBASE_IDENTITY_NOT_FOUND:
           'Identita Firebase s tímto UID neexistuje.',
         AUTH_PROVIDER_ALREADY_LINKED:

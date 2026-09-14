@@ -16,6 +16,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@google-cloud/storage": "^7.22.0",
     "@js-temporal/polyfill": "^0.5.1",
     "@nestjs/common": "^11.1.17",
     "@nestjs/config": "^4.0.2",

@@ -50,24 +50,40 @@ unless Expo push security is enabled for the EAS project.
 `PUSH_PROVIDER_TIMEOUT_MS` defaults to 30000 and bounds each provider attempt;
 it must remain below the documented two-minute reminder claim lease.
 
-Player avatars use a focused storage adapter. Development defaults to local
-files under `.data/avatars`; set `AVATAR_STORAGE_DIRECTORY` to another writable
-path if needed. `AVATAR_PUBLIC_BASE_URL` must be the API origin reachable by the
-mobile device (not `localhost` for a physical phone). Set `AVATAR_URL_SECRET` to
-an independent random secret of at least 32 characters. Signed display URLs
-default to a one-hour lifetime, and uploads default to a 5 MB limit before the
-API normalizes them to 512×512 JPEG. The local adapter is for development;
-production deployment should bind the existing `AvatarStorage` interface to
-managed object storage and keep its credentials server-side.
+Player avatars use a focused storage adapter selected by
+`AVATAR_STORAGE_DRIVER=local|gcs`. Development defaults to `local` files under
+`.data/avatars`; set `AVATAR_STORAGE_DIRECTORY` to another writable path if
+needed. TEST and production use `gcs`, which requires
+`AVATAR_GCS_BUCKET_NAME` and accepts an optional slash-separated
+`AVATAR_GCS_OBJECT_PREFIX` such as `environments/test`. Keep a prefix stable
+after storing avatars because it is part of the storage namespace.
+
+`AVATAR_PUBLIC_BASE_URL` must be the API origin reachable by the mobile device
+(not `localhost` for a physical phone). Set `AVATAR_URL_SECRET` to an
+independent random secret of at least 32 characters. Both drivers preserve the
+API's expiring HMAC-signed display URLs; the GCS bucket remains private and the
+API reads it with Application Default Credentials. Do not set a service-account
+JSON path or bake a key into the container. Signed display URLs default to a
+one-hour lifetime, and uploads default to a 5 MB limit before the API validates
+decoded bytes, normalizes orientation, square-crops/resizes to 512×512, and
+re-encodes JPEG. Original HEIC/HEIF or other source uploads are never stored.
+
+GCS uses `players/<playerId>/avatar-a.jpg` and `avatar-b.jpg` beneath the
+optional prefix. The opaque database key includes the selected object's GCS
+generation, so each replacement gets a distinct display URL even when a slot is
+reused. Replacement writes the inactive slot, switches the database reference,
+and deletes the old generation. Cleanup retries reuse one of the same two slots,
+bounding remnants to two object names per Player.
 
 The native app accepts normal camera and photo-library selections, including
 iPhone HEIC/HEIF assets, and uses Expo Image Manipulator to create a JPEG before
-multipart upload. React Native sends that local JPEG URI as its supported
-multipart file descriptor (`avatar.jpg`, `image/jpeg`); native code does not
-convert the file through an ArrayBuffer-backed Blob. Web keeps the browser Blob
-path. The API still decodes the actual bytes, enforces the size/pixel limits,
-normalizes orientation, and re-encodes the stored object; a client-declared
-extension or MIME is never treated as proof that a file is an image.
+multipart upload. Native code wraps that local JPEG URI in an Expo File, verifies
+that it exists and is a non-empty JPEG, appends the File directly to FormData,
+and sends the request with Expo Fetch. It does not construct a Blob or manually
+set a multipart boundary. Web keeps the browser Blob path. The API still decodes
+the actual bytes, enforces the size/pixel limits, normalizes orientation, and
+re-encodes the stored object; a client-declared extension or MIME is never
+treated as proof that a file is an image.
 
 ## Database setup
 
@@ -404,6 +420,7 @@ docker run --rm --name teamizer-api-cloud-run-test \
   --env PROPOSAL_RECEIPT_SECRET=local-proposal-receipt-secret-000000001 \
   --env AVATAR_URL_SECRET=local-avatar-url-secret-0000000000001 \
   --env SCHEDULER_ENABLED=false \
+  --env AVATAR_STORAGE_DRIVER=local \
   --env AVATAR_STORAGE_DIRECTORY=/tmp/teamizer-avatars \
   --env AVATAR_PUBLIC_BASE_URL=http://localhost:8080 \
   teamizer-api:cloud-run-test
@@ -426,7 +443,10 @@ Set these non-secret environment variables on the TEST service:
 - `NODE_ENV=production`
 - `FIREBASE_PROJECT_ID=<Firebase project ID>`
 - `SCHEDULER_ENABLED=false`
-- `AVATAR_STORAGE_DIRECTORY=/tmp/teamizer-avatars`
+- `AVATAR_STORAGE_DRIVER=gcs`
+- `AVATAR_GCS_BUCKET_NAME=<globally unique TEST bucket name>`
+- `AVATAR_GCS_OBJECT_PREFIX=environments/test` (optional but recommended when
+  sharing a bucket)
 - `AVATAR_PUBLIC_BASE_URL=<public HTTPS origin of the TEST API>`
 
 `PORT` is supplied by Cloud Run and does not need to be configured. The
@@ -448,10 +468,61 @@ Percent-encode credential characters that are reserved in URLs.
 
 Firebase Admin continues to use Application Default Credentials. Do not set
 `GOOGLE_APPLICATION_CREDENTIALS` on Cloud Run and do not mount a service-account
-key. Attach a dedicated runtime service account with Cloud SQL Client, access
-to the referenced Secret Manager secrets, and permission to read Firebase
-Authentication users (for example Firebase Authentication Admin). Token
-verification and guest conversion then use that workload identity.
+key. GCS uses the same Cloud Run service identity. Attach a dedicated runtime
+service account with Cloud SQL Client, access to the referenced Secret Manager
+secrets, permission to read Firebase Authentication users (for example
+Firebase Authentication Admin), and bucket-level Storage Object User
+(`roles/storage.objectUser`) on only the avatar bucket. That storage role
+provides the object create/read/delete operations used by replacement and
+display without granting bucket administration.
+
+Create and configure the TEST bucket before deployment. Bucket names are
+globally unique, so replace the example-derived value if it is already taken.
+Object Versioning and soft delete are disabled for this bounded, replaceable
+derivative-image store; otherwise deleted generations would remain billable
+outside the adapter's two live slots. Public access prevention and uniform
+bucket-level access keep object access IAM-only.
+
+```bash
+export PROJECT_ID='replace-with-gcp-project-id'
+export REGION='europe-west1'
+export AVATAR_GCS_BUCKET_NAME="${PROJECT_ID}-teamizer-test-avatars"
+export RUNTIME_SERVICE_ACCOUNT="teamizer-api-test@${PROJECT_ID}.iam.gserviceaccount.com"
+
+gcloud services enable storage.googleapis.com \
+  --project="${PROJECT_ID}"
+
+gcloud storage buckets create "gs://${AVATAR_GCS_BUCKET_NAME}" \
+  --project="${PROJECT_ID}" \
+  --location="${REGION}" \
+  --default-storage-class=STANDARD \
+  --uniform-bucket-level-access \
+  --public-access-prevention
+
+gcloud storage buckets update "gs://${AVATAR_GCS_BUCKET_NAME}" \
+  --no-versioning \
+  --clear-soft-delete
+
+gcloud storage buckets add-iam-policy-binding \
+  "gs://${AVATAR_GCS_BUCKET_NAME}" \
+  --member="serviceAccount:${RUNTIME_SERVICE_ACCOUNT}" \
+  --role='roles/storage.objectUser'
+
+gcloud storage buckets describe "gs://${AVATAR_GCS_BUCKET_NAME}"
+```
+
+For an existing TEST Cloud Run service, apply only the avatar environment
+change with:
+
+```bash
+export API_ORIGIN='https://replace-with-test-api-origin'
+
+gcloud run services update teamizer-api-test \
+  --project="${PROJECT_ID}" \
+  --region="${REGION}" \
+  --update-env-vars="AVATAR_STORAGE_DRIVER=gcs,AVATAR_GCS_BUCKET_NAME=${AVATAR_GCS_BUCKET_NAME},AVATAR_GCS_OBJECT_PREFIX=environments/test,AVATAR_PUBLIC_BASE_URL=${API_ORIGIN}" \
+  --remove-env-vars='AVATAR_STORAGE_DIRECTORY'
+```
 
 The following is the recommended build-and-deploy template. Create the
 Artifact Registry repository and Secret Manager secrets first, replace every
@@ -465,8 +536,9 @@ export ARTIFACT_REPOSITORY='teamizer'
 export IMAGE_TAG='test-001'
 export FIREBASE_PROJECT_ID='replace-with-firebase-project-id'
 export CLOUD_SQL_CONNECTION_NAME='PROJECT:REGION:INSTANCE'
-export RUNTIME_SERVICE_ACCOUNT='teamizer-api-test@PROJECT.iam.gserviceaccount.com'
+export RUNTIME_SERVICE_ACCOUNT="teamizer-api-test@${PROJECT_ID}.iam.gserviceaccount.com"
 export API_ORIGIN='https://replace-with-test-api-origin'
+export AVATAR_GCS_BUCKET_NAME="${PROJECT_ID}-teamizer-test-avatars"
 export IMAGE_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${ARTIFACT_REPOSITORY}/teamizer-api:${IMAGE_TAG}"
 
 gcloud builds submit \
@@ -485,14 +557,16 @@ gcloud run deploy teamizer-api-test \
   --min=0 \
   --max=1 \
   --set-cloudsql-instances="$CLOUD_SQL_CONNECTION_NAME" \
-  --set-env-vars="NODE_ENV=production,FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID},SCHEDULER_ENABLED=false,AVATAR_STORAGE_DIRECTORY=/tmp/teamizer-avatars,AVATAR_PUBLIC_BASE_URL=${API_ORIGIN}" \
+  --set-env-vars="NODE_ENV=production,FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID},SCHEDULER_ENABLED=false,AVATAR_STORAGE_DRIVER=gcs,AVATAR_GCS_BUCKET_NAME=${AVATAR_GCS_BUCKET_NAME},AVATAR_GCS_OBJECT_PREFIX=environments/test,AVATAR_PUBLIC_BASE_URL=${API_ORIGIN}" \
   --set-secrets="DATABASE_URL=teamizer-test-database-url:latest,PROPOSAL_RECEIPT_SECRET=teamizer-test-proposal-receipt-secret:latest,AVATAR_URL_SECRET=teamizer-test-avatar-url-secret:latest"
 ```
 
 `--allow-unauthenticated` permits the mobile client and public health probe to
 reach Cloud Run; the API's existing Firebase bearer-token authorization still
-protects every non-public API route. `--max=1` limits inconsistent avatar reads
-during the temporary TEST phase but does not make local files durable.
+protects every non-public API route. Avatar URLs retain their independent HMAC
+expiry check, and the private bucket is never exposed directly. GCS supports
+durable avatars across restarts and multiple revisions; `--max=1` is no longer
+required for avatar consistency and remains only a TEST capacity choice.
 
 With `SCHEDULER_ENABLED=false`, scale-to-zero is safe for API traffic but no
 background Match materialization or reminder delivery occurs. An active ADMIN
@@ -503,12 +577,9 @@ protected endpoint or job that invokes both the existing due-materialization
 and reminder services. The current Firebase-user ADMIN endpoint is not a Cloud
 Scheduler workload-authentication boundary.
 
-The current `AvatarStorage` binding is `LocalAvatarStorage`. `/tmp` keeps the
-container writable for a temporary TEST deployment, but uploaded avatars are
-lost on instance restart or replacement and cannot be shared across replicas.
-The smallest production follow-up is a Google Cloud Storage implementation of
-the existing `AvatarStorage` interface plus configuration-based provider
-binding; the Player-facing API and database-owned storage keys need not change.
+TEST must use `AVATAR_STORAGE_DRIVER=gcs`. Local filesystem storage remains for
+development and local container verification only; it is not durable across
+Cloud Run instance replacement and must not be used for deployed avatars.
 
 ### Native development builds
 

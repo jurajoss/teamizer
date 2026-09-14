@@ -5,7 +5,12 @@ import { join } from 'node:path';
 import { ConfigService } from '@nestjs/config';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { LocalAvatarStorage } from '../src/avatars/avatar-storage';
+import { createAvatarStorage } from '../src/avatars/avatar.module';
+import {
+  type AvatarStorage,
+  LocalAvatarStorage,
+} from '../src/avatars/avatar-storage';
+import { GcsAvatarStorage } from '../src/avatars/gcs-avatar-storage';
 
 describe('LocalAvatarStorage', () => {
   let directory: string;
@@ -69,5 +74,29 @@ describe('LocalAvatarStorage', () => {
     await expect(
       storage.readSigned('../../outside.jpg', expires, signature),
     ).resolves.toBeNull();
+  });
+});
+
+describe('avatar storage driver selection', () => {
+  const commonConfig = {
+    AVATAR_STORAGE_DIRECTORY: '.data/avatars',
+    AVATAR_GCS_BUCKET_NAME: 'teamizer-test-avatars',
+    AVATAR_PUBLIC_BASE_URL: 'https://api.example.test',
+    AVATAR_URL_SECRET: 'avatar-url-test-secret-at-least-32-characters',
+    AVATAR_URL_TTL_SECONDS: 3_600,
+  };
+
+  it.each([
+    ['local', LocalAvatarStorage],
+    ['gcs', GcsAvatarStorage],
+  ] as const)('binds the %s driver', (driver, expectedType) => {
+    const storage: AvatarStorage = createAvatarStorage(
+      new ConfigService({
+        ...commonConfig,
+        AVATAR_STORAGE_DRIVER: driver,
+      }),
+    );
+
+    expect(storage).toBeInstanceOf(expectedType);
   });
 });

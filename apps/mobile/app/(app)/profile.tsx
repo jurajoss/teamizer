@@ -84,8 +84,7 @@ export default function ProfileRoute() {
       await publish(player);
     },
   });
-  const mutationError =
-    nameMutation.error ?? avatarMutation.error ?? removeAvatarMutation.error;
+  const mutationError = nameMutation.error ?? removeAvatarMutation.error;
 
   if (state.status !== 'AUTHENTICATED') {
     return <FoundationScreen busy message={t('home.checking')} />;

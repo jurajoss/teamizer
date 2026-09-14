@@ -135,7 +135,6 @@ export default function AdminPlayerDetailRoute() {
   });
   const error =
     updateMutation.error ??
-    avatarMutation.error ??
     removeAvatarMutation.error ??
     conversionMutation.error;
   const errorMessage = localizedErrorMessage(

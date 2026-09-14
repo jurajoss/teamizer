@@ -11,7 +11,11 @@ export type StoredAvatar = {
 };
 
 export interface AvatarStorage {
-  store(playerId: string, data: Buffer): Promise<string>;
+  store(
+    playerId: string,
+    data: Buffer,
+    replacingStorageKey?: string | null,
+  ): Promise<string>;
   delete(storageKey: string): Promise<void>;
   publicUrl(storageKey: string): string;
   readSigned(
@@ -26,12 +30,58 @@ export const AVATAR_STORAGE = Symbol('AVATAR_STORAGE');
 const STORAGE_KEY_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jpg$/i;
 
-@Injectable()
-export class LocalAvatarStorage implements AvatarStorage {
-  private readonly directory: string;
+export class AvatarUrlSigner {
   private readonly publicBaseUrl: string;
   private readonly signingSecret: string;
   private readonly urlTtlSeconds: number;
+
+  constructor(config: ConfigService) {
+    this.publicBaseUrl = config.getOrThrow<string>('AVATAR_PUBLIC_BASE_URL');
+    this.signingSecret = config.getOrThrow<string>('AVATAR_URL_SECRET');
+    this.urlTtlSeconds = config.getOrThrow<number>('AVATAR_URL_TTL_SECONDS');
+  }
+
+  publicUrl(storageKey: string): string {
+    const expires = Math.floor(Date.now() / 1_000) + this.urlTtlSeconds;
+    const signature = this.signature(storageKey, expires);
+    const query = new URLSearchParams({
+      expires: String(expires),
+      signature,
+    });
+    return `${this.publicBaseUrl}/player-avatars/${encodeURIComponent(storageKey)}?${query}`;
+  }
+
+  validRequest(
+    storageKey: string,
+    expiresValue: string,
+    candidateSignature: string,
+  ): boolean {
+    const expires = Number(expiresValue);
+    if (
+      !Number.isSafeInteger(expires) ||
+      expires < Math.floor(Date.now() / 1_000)
+    ) {
+      return false;
+    }
+
+    const expected = Buffer.from(this.signature(storageKey, expires));
+    const received = Buffer.from(candidateSignature);
+    return (
+      expected.length === received.length && timingSafeEqual(expected, received)
+    );
+  }
+
+  private signature(storageKey: string, expires: number): string {
+    return createHmac('sha256', this.signingSecret)
+      .update(`${storageKey}:${expires}`)
+      .digest('base64url');
+  }
+}
+
+@Injectable()
+export class LocalAvatarStorage implements AvatarStorage {
+  private readonly directory: string;
+  private readonly urlSigner: AvatarUrlSigner;
 
   constructor(@Inject(ConfigService) config: ConfigService) {
     const configuredDirectory = config.getOrThrow<string>(
@@ -40,9 +90,7 @@ export class LocalAvatarStorage implements AvatarStorage {
     this.directory = isAbsolute(configuredDirectory)
       ? configuredDirectory
       : resolve(process.cwd(), configuredDirectory);
-    this.publicBaseUrl = config.getOrThrow<string>('AVATAR_PUBLIC_BASE_URL');
-    this.signingSecret = config.getOrThrow<string>('AVATAR_URL_SECRET');
-    this.urlTtlSeconds = config.getOrThrow<number>('AVATAR_URL_TTL_SECONDS');
+    this.urlSigner = new AvatarUrlSigner(config);
   }
 
   async store(playerId: string, data: Buffer): Promise<string> {
@@ -61,13 +109,7 @@ export class LocalAvatarStorage implements AvatarStorage {
   }
 
   publicUrl(storageKey: string): string {
-    const expires = Math.floor(Date.now() / 1_000) + this.urlTtlSeconds;
-    const signature = this.signature(storageKey, expires);
-    const query = new URLSearchParams({
-      expires: String(expires),
-      signature,
-    });
-    return `${this.publicBaseUrl}/player-avatars/${encodeURIComponent(storageKey)}?${query}`;
+    return this.urlSigner.publicUrl(storageKey);
   }
 
   async readSigned(
@@ -75,11 +117,9 @@ export class LocalAvatarStorage implements AvatarStorage {
     expiresValue: string,
     signature: string,
   ): Promise<StoredAvatar | null> {
-    const expires = Number(expiresValue);
     if (
-      !Number.isSafeInteger(expires) ||
-      expires < Math.floor(Date.now() / 1_000) ||
-      !this.validSignature(storageKey, expires, signature)
+      !STORAGE_KEY_PATTERN.test(storageKey) ||
+      !this.urlSigner.validRequest(storageKey, expiresValue, signature)
     ) {
       return null;
     }
@@ -100,25 +140,6 @@ export class LocalAvatarStorage implements AvatarStorage {
       throw new Error('Invalid server-owned avatar storage key.');
     }
     return resolve(this.directory, storageKey);
-  }
-
-  private signature(storageKey: string, expires: number): string {
-    return createHmac('sha256', this.signingSecret)
-      .update(`${storageKey}:${expires}`)
-      .digest('base64url');
-  }
-
-  private validSignature(
-    storageKey: string,
-    expires: number,
-    candidate: string,
-  ): boolean {
-    if (!STORAGE_KEY_PATTERN.test(storageKey)) return false;
-    const expected = Buffer.from(this.signature(storageKey, expires));
-    const received = Buffer.from(candidate);
-    return (
-      expected.length === received.length && timingSafeEqual(expected, received)
-    );
   }
 }
 

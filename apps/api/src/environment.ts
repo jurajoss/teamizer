@@ -5,6 +5,7 @@ const supportedNodeEnvironments = new Set([
 ]);
 
 export type NodeEnvironment = 'development' | 'test' | 'production';
+export type AvatarStorageDriver = 'local' | 'gcs';
 
 export type AppEnvironment = Record<string, unknown> & {
   NODE_ENV: NodeEnvironment;
@@ -15,7 +16,10 @@ export type AppEnvironment = Record<string, unknown> & {
   SCHEDULER_ENABLED: boolean;
   SCHEDULER_TICK_INTERVAL_MS: number;
   PUSH_PROVIDER_TIMEOUT_MS: number;
+  AVATAR_STORAGE_DRIVER: AvatarStorageDriver;
   AVATAR_STORAGE_DIRECTORY: string;
+  AVATAR_GCS_BUCKET_NAME?: string;
+  AVATAR_GCS_OBJECT_PREFIX?: string;
   AVATAR_PUBLIC_BASE_URL: string;
   AVATAR_URL_SECRET: string;
   AVATAR_MAX_UPLOAD_BYTES: number;
@@ -101,9 +105,25 @@ export function validateEnvironment(
     throw new Error('EXPO_PUSH_ACCESS_TOKEN must be a nonblank string.');
   }
 
+  const avatarStorageDriver = avatarStorageDriverValue(
+    environment.AVATAR_STORAGE_DRIVER,
+  );
   const avatarStorageDirectory = stringValue(
     environment.AVATAR_STORAGE_DIRECTORY ?? '.data/avatars',
     'AVATAR_STORAGE_DIRECTORY',
+  );
+  const avatarGcsBucketName = optionalStringValue(
+    environment.AVATAR_GCS_BUCKET_NAME,
+    'AVATAR_GCS_BUCKET_NAME',
+  );
+  if (avatarStorageDriver === 'gcs' && !avatarGcsBucketName) {
+    throw new Error(
+      'AVATAR_GCS_BUCKET_NAME is required when AVATAR_STORAGE_DRIVER is gcs.',
+    );
+  }
+  if (avatarGcsBucketName) validateGcsBucketName(avatarGcsBucketName);
+  const avatarGcsObjectPrefix = optionalGcsObjectPrefix(
+    environment.AVATAR_GCS_OBJECT_PREFIX,
   );
   const avatarPublicBaseUrl = stringValue(
     environment.AVATAR_PUBLIC_BASE_URL ?? `http://localhost:${port}`,
@@ -157,7 +177,14 @@ export function validateEnvironment(
     SCHEDULER_ENABLED: schedulerEnabled,
     SCHEDULER_TICK_INTERVAL_MS: schedulerTickIntervalMs,
     PUSH_PROVIDER_TIMEOUT_MS: pushProviderTimeoutMs,
+    AVATAR_STORAGE_DRIVER: avatarStorageDriver,
     AVATAR_STORAGE_DIRECTORY: avatarStorageDirectory,
+    ...(avatarGcsBucketName
+      ? { AVATAR_GCS_BUCKET_NAME: avatarGcsBucketName }
+      : {}),
+    ...(avatarGcsObjectPrefix
+      ? { AVATAR_GCS_OBJECT_PREFIX: avatarGcsObjectPrefix }
+      : {}),
     AVATAR_PUBLIC_BASE_URL: avatarPublicBaseUrl.replace(/\/$/, ''),
     AVATAR_URL_SECRET: avatarUrlSecret,
     AVATAR_MAX_UPLOAD_BYTES: avatarMaxUploadBytes,
@@ -166,6 +193,52 @@ export function validateEnvironment(
       ? { EXPO_PUSH_ACCESS_TOKEN: expoPushAccessToken.trim() }
       : {}),
   };
+}
+
+function avatarStorageDriverValue(value: unknown): AvatarStorageDriver {
+  const driver = value ?? 'local';
+  if (driver !== 'local' && driver !== 'gcs') {
+    throw new Error('AVATAR_STORAGE_DRIVER must be local or gcs.');
+  }
+  return driver;
+}
+
+function optionalStringValue(value: unknown, name: string): string | undefined {
+  if (value === undefined || value === '') return undefined;
+  return stringValue(value, name);
+}
+
+function validateGcsBucketName(bucketName: string): void {
+  const labels = bucketName.split('.');
+  if (
+    bucketName.length < 3 ||
+    bucketName.length > 222 ||
+    !/^[a-z0-9][a-z0-9._-]*[a-z0-9]$/.test(bucketName) ||
+    labels.some((label) => label.length === 0 || label.length > 63) ||
+    /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(bucketName)
+  ) {
+    throw new Error(
+      'AVATAR_GCS_BUCKET_NAME must be a bare valid GCS bucket name.',
+    );
+  }
+}
+
+function optionalGcsObjectPrefix(value: unknown): string | undefined {
+  const prefix = optionalStringValue(value, 'AVATAR_GCS_OBJECT_PREFIX');
+  if (!prefix) return undefined;
+  if (
+    prefix.length > 200 ||
+    prefix.startsWith('/') ||
+    prefix.endsWith('/') ||
+    prefix
+      .split('/')
+      .some((segment) => !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(segment))
+  ) {
+    throw new Error(
+      'AVATAR_GCS_OBJECT_PREFIX must be slash-separated safe path segments without leading or trailing slashes.',
+    );
+  }
+  return prefix;
 }
 
 function postgresqlUrl(value: unknown, name: string): string {

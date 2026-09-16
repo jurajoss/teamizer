@@ -34,14 +34,17 @@ import type {
   PlayerMatchHistoryPageDto,
   PlayersPageDto,
   PlayerStatisticsDto,
+  PlayerInvitationResponseDto,
 } from './player.dto';
 import {
   ConvertGuestRequestDto,
+  InviteGuestRequestDto,
   PaginationQueryDto,
   PlayerListQueryDto,
   UpdatePlayerRequestDto,
 } from './player.dto';
 import { PlayerIdentityService } from './player-identity.service';
+import { PlayerInvitationService } from '../invitations/player-invitation.service';
 import { mapAdminPlayer, mapUser } from './player.mapper';
 import { PlayerProfileService } from './player-profile.service';
 import { PlayerStatisticsService } from './player-statistics.service';
@@ -56,6 +59,8 @@ export class PlayersController {
     @Inject(PlayerProfileService)
     private readonly playerProfiles: PlayerProfileService,
     @Inject(AvatarService) private readonly avatars: AvatarService,
+    @Inject(PlayerInvitationService)
+    private readonly playerInvitations: PlayerInvitationService,
   ) {}
 
   @Get()
@@ -146,5 +151,17 @@ export class PlayersController {
       user: mapUser(user),
       player: mapAdminPlayer(user.player, (key) => this.avatars.urlFor(key)),
     };
+  }
+
+  @Post(':playerId/invite')
+  @HttpCode(HttpStatus.CREATED)
+  @Roles(UserRole.ADMIN)
+  @ActivePlayerRequired()
+  inviteGuest(
+    @Param('playerId', new ParseUUIDPipe()) playerId: string,
+    @Body(createDtoValidationPipe(InviteGuestRequestDto))
+    request: InviteGuestRequestDto,
+  ): Promise<PlayerInvitationResponseDto> {
+    return this.playerInvitations.invite(playerId, request.email);
   }
 }

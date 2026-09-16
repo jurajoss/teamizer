@@ -30,6 +30,7 @@ export type AuthenticatedUser = Prisma.UserGetPayload<{
 
 export type VerifiedFirebaseIdentity = {
   authProviderId: string;
+  email?: string;
 };
 
 export type RequestAuthentication = {

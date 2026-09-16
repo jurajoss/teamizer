@@ -27,6 +27,7 @@ explicitly for review.
 | `UserRole` | `PLAYER`, `ADMIN` | Application authorization |
 | `PlayerType` | `REGULAR`, `GUEST` | A guest has no User; conversion changes it to `REGULAR` |
 | `PlayerStatus` | `ACTIVE`, `INACTIVE` | New match participation and player actions require `ACTIVE` |
+| `PlayerInvitationStatus` | `PENDING`, `SENT`, `ACCEPTED`, `REVOKED` | Recoverable Guest invitation lifecycle |
 | `MatchStatus` | `OPEN_FOR_REGISTRATION`, `IN_PROGRESS`, `FINISHED`, `CANCELLED` | Persistent lifecycle |
 | `Attendance` | `GOING`, `NOT_GOING` | A missing MatchParticipant is unanswered |
 | `TeamSide` | `A`, `B` | The two immutable final teams |
@@ -56,11 +57,14 @@ authorization change without changing the underlying historical Player data.
 |---|---|---|---|
 | `Player` | UUID ID; name; type; status; five required 1–10 attributes; optional avatar storage metadata; timestamps | PK `id`; index `(status, name)` | A Player is never hard-deleted through MVP flows. Foreign references restrict deletion, preserving history. |
 | `User` | UUID ID; `playerId`; unique Firebase `authProviderId`; role default `PLAYER`; notification preference; timestamps | PK `id`; unique `playerId`; unique `authProviderId` | Deleting a User does not delete a Player. User deletion is outside MVP; the Player FK restricts deletion of the Player. |
+| `PlayerInvitation` | one Player; normalized email; optional resolved Firebase UID; lifecycle status; delivery-attempt count and leased claim; sent/accepted/error timestamps | PK `id`; unique `playerId`; unique `email`; unique nullable `authProviderId`; index `(status, attemptStartedAt)` | The Player FK restricts deletion. Action links, passwords, provider secrets, and email bodies are never stored. |
 
-Guest conversion is one transaction: create the User with the existing
-`playerId`, set `Player.type = REGULAR`, and retain every existing foreign key
-to that Player. Only an ADMIN performs it. Initial ADMIN provisioning is
-outside the database/API flow, as specified.
+Guest activation is one transaction: create the User with the existing
+`playerId`, set `Player.type = REGULAR`, mark its invitation accepted, and
+retain every existing foreign key to that Player. The invitation row is the
+smallest durable state needed to recover across Firebase, PostgreSQL, and email
+side effects. Only an ADMIN creates it. Initial ADMIN provisioning remains
+outside the database/API flow.
 
 Avatar binary data is not stored in PostgreSQL. `avatarStorageKey` is an opaque
 object-storage key; the API may derive a short-lived `avatarUrl` from it.
@@ -173,6 +177,17 @@ above and appear in the schema.
 | `notifications_enabled` | `boolean` | `Boolean` | `true` |
 | timestamps | `timestamptz(6)` | `DateTime` | now / automatic |
 
+### `PlayerInvitation`
+
+| Field | PostgreSQL | Prisma | Null / default |
+|---|---|---|---|
+| `id`, `player_id` | `uuid` | `String @db.Uuid` | PK; required unique Player FK |
+| `email` | `varchar(254)` | `String @db.VarChar(254)` | required unique normalized email |
+| `auth_provider_id` | `varchar(255)` | nullable `String @db.VarChar(255)` | unique; null until Firebase identity resolution |
+| `status` | enum | `PlayerInvitationStatus` | `PENDING` |
+| delivery state | integer, nullable UUID/timestamps, nullable `varchar(64)` | attempt count, claim token/start, sent/accepted time, last stable error code | count `0`; others null |
+| timestamps | `timestamptz(6)` | `DateTime` | now / automatic |
+
 ### `Sport` and `Schedule`
 
 | Model / field | PostgreSQL | Prisma | Null / default |
@@ -266,6 +281,13 @@ enum PlayerStatus {
   INACTIVE
 }
 
+enum PlayerInvitationStatus {
+  PENDING
+  SENT
+  ACCEPTED
+  REVOKED
+}
+
 enum MatchStatus {
   OPEN_FOR_REGISTRATION
   IN_PROGRESS
@@ -352,11 +374,32 @@ model Player {
   updatedAt          DateTime      @updatedAt @db.Timestamptz(6)
 
   user               User?              @relation("PlayerUser")
+  invitation         PlayerInvitation?
   participants       MatchParticipant[]
   teamMemberships    TeamMembership[]
   matchPlayerStats   MatchPlayerStat[]
 
   @@index([status, name])
+}
+
+model PlayerInvitation {
+  id                   String                  @id @default(uuid()) @db.Uuid
+  playerId             String                  @unique @db.Uuid
+  email                String                  @unique @db.VarChar(254)
+  authProviderId       String?                 @unique @db.VarChar(255)
+  status               PlayerInvitationStatus @default(PENDING)
+  deliveryAttemptCount Int                     @default(0)
+  attemptToken         String?                 @db.Uuid
+  attemptStartedAt     DateTime?               @db.Timestamptz(6)
+  sentAt               DateTime?               @db.Timestamptz(6)
+  acceptedAt           DateTime?               @db.Timestamptz(6)
+  lastErrorCode        String?                 @db.VarChar(64)
+  createdAt            DateTime                @default(now()) @db.Timestamptz(6)
+  updatedAt            DateTime                @updatedAt @db.Timestamptz(6)
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([status, attemptStartedAt])
 }
 
 model Sport {
@@ -536,8 +579,9 @@ model MatchReminderDelivery {
 
 ## Design review
 
-- Guests are Players without Users; conversion preserves every Player foreign
-  key because Player IDs never change.
+- Guests are Players without Users; invitation activation preserves every
+  Player foreign key because Player IDs never change. The invitation row makes
+  external identity/email retries explicit without storing action secrets.
 - Unanswered attendance is represented by the absence of a composite-keyed
   MatchParticipant row.
 - The TeamMembership composite primary key enforces one final team per player

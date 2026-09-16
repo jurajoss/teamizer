@@ -25,6 +25,9 @@ describe('validateEnvironment', () => {
       AVATAR_URL_SECRET: validEnvironment.PROPOSAL_RECEIPT_SECRET,
       AVATAR_MAX_UPLOAD_BYTES: 5_000_000,
       AVATAR_URL_TTL_SECONDS: 3_600,
+      INVITATION_EMAIL_DRIVER: 'development',
+      INVITATION_EMAIL_TIMEOUT_MS: 10_000,
+      INVITATION_ATTEMPT_LEASE_SECONDS: 120,
     });
   });
 
@@ -176,5 +179,73 @@ describe('validateEnvironment', () => {
     ).toThrow(
       'AVATAR_URL_TTL_SECONDS must be an integer between 60 and 604800.',
     );
+  });
+
+  it('requires an explicitly configured delivery sender in production', () => {
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        NODE_ENV: 'production',
+      }),
+    ).toThrow(
+      'INVITATION_EMAIL_DRIVER must be development, firebase, or resend; production must configure firebase or resend explicitly.',
+    );
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        NODE_ENV: 'production',
+        INVITATION_EMAIL_DRIVER: 'development',
+      }),
+    ).toThrow(
+      'INVITATION_EMAIL_DRIVER must be firebase or resend when NODE_ENV is production.',
+    );
+    const firebaseEnvironment = validateEnvironment({
+      ...validEnvironment,
+      NODE_ENV: 'production',
+      INVITATION_EMAIL_DRIVER: 'firebase',
+    });
+    expect(firebaseEnvironment).toMatchObject({
+      INVITATION_EMAIL_DRIVER: 'firebase',
+      FIREBASE_PROJECT_ID: 'teamizer-test',
+    });
+    expect(firebaseEnvironment.INVITATION_EMAIL_FROM).toBeUndefined();
+    expect(firebaseEnvironment.RESEND_API_KEY).toBeUndefined();
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        INVITATION_EMAIL_DRIVER: 'resend',
+        RESEND_API_KEY: 'secret-from-secret-manager',
+      }),
+    ).toThrow(
+      'INVITATION_EMAIL_FROM is required when INVITATION_EMAIL_DRIVER is resend.',
+    );
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        INVITATION_EMAIL_DRIVER: 'resend',
+        INVITATION_EMAIL_FROM: 'Teamizer <invite@example.com>',
+      }),
+    ).toThrow(
+      'RESEND_API_KEY is required when INVITATION_EMAIL_DRIVER is resend.',
+    );
+    expect(
+      validateEnvironment({
+        ...validEnvironment,
+        NODE_ENV: 'production',
+        INVITATION_EMAIL_DRIVER: 'resend',
+        INVITATION_EMAIL_FROM: 'Teamizer <invite@example.com>',
+        INVITATION_EMAIL_REPLY_TO: 'support@example.com',
+        RESEND_API_KEY: 'secret-from-secret-manager',
+        INVITATION_EMAIL_TIMEOUT_MS: '5000',
+        INVITATION_ATTEMPT_LEASE_SECONDS: '90',
+      }),
+    ).toMatchObject({
+      INVITATION_EMAIL_DRIVER: 'resend',
+      INVITATION_EMAIL_FROM: 'Teamizer <invite@example.com>',
+      INVITATION_EMAIL_REPLY_TO: 'support@example.com',
+      RESEND_API_KEY: 'secret-from-secret-manager',
+      INVITATION_EMAIL_TIMEOUT_MS: 5_000,
+      INVITATION_ATTEMPT_LEASE_SECONDS: 90,
+    });
   });
 });

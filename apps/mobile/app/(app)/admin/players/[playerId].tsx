@@ -26,6 +26,10 @@ import { AvatarManager } from '../../../../src/profiles/avatar-manager';
 import type { PreparedAvatar } from '../../../../src/profiles/avatar-picker';
 import {
   canAccessPlayerAdministration,
+  canInviteGuest,
+  canSubmitGuestInvitation,
+  isValidInvitationEmail,
+  normalizeInvitationEmail,
   requiresDeactivationConfirmation,
 } from '../../../../src/profiles/player-admin';
 import { profileQueryKeys } from '../../../../src/profiles/profile-query-keys';
@@ -73,6 +77,8 @@ export default function AdminPlayerDetailRoute() {
     number
   > | null>(null);
   const [authProviderId, setAuthProviderId] = useState('');
+  const [invitationEmail, setInvitationEmail] = useState('');
+  const [showAdvancedConversion, setShowAdvancedConversion] = useState(false);
   const [confirmingDeactivation, setConfirmingDeactivation] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -133,20 +139,38 @@ export default function AdminPlayerDetailRoute() {
       await publish(player);
     },
   });
+  const invitationMutation = useMutation({
+    mutationFn: () => apiClient.inviteGuest(playerId ?? '', invitationEmail),
+    onSuccess: (invitation) => {
+      setInvitationEmail(normalizeInvitationEmail(invitationEmail));
+      setMessage(
+        t(
+          invitation.status === 'ACCEPTED'
+            ? 'adminPlayer.invitationAlreadyAccepted'
+            : 'adminPlayer.invitationSent',
+        ),
+      );
+    },
+  });
   const error =
     updateMutation.error ??
     removeAvatarMutation.error ??
+    invitationMutation.error ??
     conversionMutation.error;
   const errorMessage = localizedErrorMessage(
     error,
     t,
-    'adminPlayer.saveFailed',
+    invitationMutation.error
+      ? 'adminPlayer.invitationFailed'
+      : 'adminPlayer.saveFailed',
   );
   const busy =
     updateMutation.isPending ||
     avatarMutation.isPending ||
     removeAvatarMutation.isPending ||
+    invitationMutation.isPending ||
     conversionMutation.isPending;
+  const invitationEmailValid = isValidInvitationEmail(invitationEmail);
 
   if (
     state.status !== 'AUTHENTICATED' ||
@@ -271,37 +295,101 @@ export default function AdminPlayerDetailRoute() {
               }}
             />
           </Surface>
-          {detailQuery.data.type === 'GUEST' ? (
-            <Surface tone="brand" style={styles.columnCard}>
-              <View style={styles.sectionHeading}>
-                <AppText variant="eyebrow" tone="brand">
-                  {t('adminPlayer.conversion').toUpperCase()}
-                </AppText>
-                <AppText variant="heading">
-                  {t('adminPlayer.linkIdentity')}
-                </AppText>
-                <AppText tone="muted">
-                  {t('adminPlayer.conversionHint')}
-                </AppText>
-              </View>
-              <TextField
-                autoCapitalize="none"
-                autoCorrect={false}
-                editable={!busy && !administrationDisabled}
-                label={t('adminPlayer.firebaseUid')}
-                maxLength={255}
-                onChangeText={setAuthProviderId}
-                value={authProviderId}
-              />
-              <Button
-                busy={conversionMutation.isPending}
-                disabled={
-                  !authProviderId.trim() || busy || administrationDisabled
-                }
-                label={t('adminPlayer.convert')}
-                onPress={() => conversionMutation.mutate()}
-              />
-            </Surface>
+          {canInviteGuest(
+            state.currentUser.user.role,
+            detailQuery.data.type,
+          ) ? (
+            <>
+              <Surface tone="brand" style={styles.columnCard}>
+                <View style={styles.sectionHeading}>
+                  <AppText variant="eyebrow" tone="brand">
+                    {t('adminPlayer.accountAccess').toUpperCase()}
+                  </AppText>
+                  <AppText variant="heading">
+                    {t('adminPlayer.inviteAsUser')}
+                  </AppText>
+                  <AppText tone="muted">
+                    {t('adminPlayer.invitationHint')}
+                  </AppText>
+                </View>
+                <TextField
+                  autoCapitalize="none"
+                  autoComplete="email"
+                  autoCorrect={false}
+                  editable={!busy && !administrationDisabled}
+                  error={
+                    invitationEmail.length > 0 && !invitationEmailValid
+                      ? t('adminPlayer.invalidEmail')
+                      : null
+                  }
+                  inputMode="email"
+                  keyboardType="email-address"
+                  label={t('adminPlayer.email')}
+                  maxLength={254}
+                  onChangeText={setInvitationEmail}
+                  textContentType="emailAddress"
+                  value={invitationEmail}
+                />
+                <Button
+                  accessibilityHint={t('adminPlayer.sendInvitationHint')}
+                  busy={invitationMutation.isPending}
+                  disabled={
+                    !canSubmitGuestInvitation(
+                      invitationEmail,
+                      busy,
+                      administrationDisabled,
+                    )
+                  }
+                  label={t('adminPlayer.sendInvitation')}
+                  onPress={() => invitationMutation.mutate()}
+                />
+              </Surface>
+              <Surface tone="muted" style={styles.columnCard}>
+                <Button
+                  accessibilityState={{ expanded: showAdvancedConversion }}
+                  disabled={busy || administrationDisabled}
+                  label={
+                    showAdvancedConversion
+                      ? t('adminPlayer.hideAdvanced')
+                      : t('adminPlayer.advancedOptions')
+                  }
+                  onPress={() =>
+                    setShowAdvancedConversion((current) => !current)
+                  }
+                  variant="ghost"
+                />
+                {showAdvancedConversion ? (
+                  <>
+                    <View style={styles.sectionHeading}>
+                      <AppText variant="heading">
+                        {t('adminPlayer.linkIdentity')}
+                      </AppText>
+                      <AppText tone="muted">
+                        {t('adminPlayer.conversionHint')}
+                      </AppText>
+                    </View>
+                    <TextField
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      editable={!busy && !administrationDisabled}
+                      label={t('adminPlayer.firebaseUid')}
+                      maxLength={255}
+                      onChangeText={setAuthProviderId}
+                      value={authProviderId}
+                    />
+                    <Button
+                      busy={conversionMutation.isPending}
+                      disabled={
+                        !authProviderId.trim() || busy || administrationDisabled
+                      }
+                      label={t('adminPlayer.convert')}
+                      onPress={() => conversionMutation.mutate()}
+                      variant="secondary"
+                    />
+                  </>
+                ) : null}
+              </Surface>
+            </>
           ) : null}
           <Surface tone="muted" style={styles.destructiveArea}>
             <View style={styles.sectionHeading}>

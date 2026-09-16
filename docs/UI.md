@@ -185,7 +185,12 @@ The ADMIN Player list is a phone-first vertical identity list with avatar,
 regular/guest account-linkage language, ACTIVE/inactive status, lightweight
 name-prefix search, and simple status filters. Player detail keeps public name
 editing, the five ADMIN-only bounded rating steppers, avatar management, guest
-conversion, and status management in distinct sections. Deactivation is
+invitation, and status management in distinct sections. For a Guest, the
+primary account action is a localized email field plus **Invite as user**.
+Loading prevents duplicate taps; invalid email is inline; success and stable API
+failures use one banner. **Advanced options** reveals the existing Firebase UID
+link as a secondary action. Neither account control is rendered for a regular
+Player or non-ADMIN. Deactivation is
 visually separated, requires confirmation, and explains that Player ID and
 history remain; there is no hard-delete affordance.
 

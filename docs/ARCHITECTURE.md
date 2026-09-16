@@ -93,10 +93,32 @@ database reference, and then delete the superseded generation. This avoids URL
 cache collisions and bounds failed-cleanup remnants without changing the Player
 or profile API.
 
-Guest conversion updates the same Player row and creates only the User link, so
-attributes, avatar metadata, memberships, statistics, and history keep their
-existing Player ID. MVP deletion is status deactivation; Player/User rows and
-historical Match relations are not physically deleted.
+Guest invitation uses a small persistent `PlayerInvitation` reservation because
+PostgreSQL, Firebase Authentication, and email delivery cannot be committed in
+one transaction. The Guest stays a Guest while Firebase identity preparation
+and email delivery run. The reservation stores normalized email, the resolved
+Firebase UID, delivery/claim state, and timestamps, but never the action link or
+password. On the invited identity's first authenticated request, a Player-row
+locked transaction creates the User, changes the same Player row to `REGULAR`,
+and marks the invitation accepted. Attributes, avatar metadata, memberships,
+statistics, and history therefore keep their existing Player ID.
+
+Invitation delivery remains behind `InvitationEmailSender`. The `development`
+driver is a safe no-send adapter. The `firebase` driver uses the existing
+Application Default Credential to call Identity Toolkit's project-scoped
+`accounts:sendOobCode` operation with `PASSWORD_RESET`, web-first handling, and
+no returned OOB link; Firebase sends its configured password-reset template and
+hosts the default browser action handler on the project's `firebaseapp.com`
+domain. The `resend` driver retains the branded bilingual template and embeds a
+Firebase Admin-generated reset link. The Firebase request supplies no mobile
+application settings, continue URL, `linkDomain`, or deprecated
+`dynamicLinkDomain`, so invitation setup does not depend on Firebase Dynamic
+Links, native deep linking, or passwordless email-link authentication.
+
+The ADMIN UID conversion remains an advanced fallback. It uses the same Player
+lock and cannot override an in-flight invitation or silently replace a UID
+already reserved for that Player. MVP deletion is status deactivation;
+Player/User rows and historical Match relations are not physically deleted.
 
 ## Recurring scheduling and push
 

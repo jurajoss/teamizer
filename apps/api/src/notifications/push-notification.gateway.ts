@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { getMessaging } from 'firebase-admin/messaging';
 import type { PushProvider } from '@prisma/client';
 
-import { getTeamizerFirebaseApp } from '../auth/firebase-token-verifier.service';
+import { getTeamizerFirebaseApp } from '../auth/firebase-app';
 
 export type PushMessage = {
   token: string;

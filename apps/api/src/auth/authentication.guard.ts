@@ -4,6 +4,7 @@ import { Reflector } from '@nestjs/core';
 
 import { ApiError } from '../common/errors/api-error';
 import { PrismaService } from '../prisma/prisma.service';
+import { PlayerInvitationActivationService } from '../invitations/player-invitation-activation.service';
 import { ALLOW_UNONBOARDED_KEY, PUBLIC_ROUTE_KEY } from './auth.decorators';
 import {
   authenticatedUserSelect,
@@ -19,6 +20,8 @@ export class AuthenticationGuard implements CanActivate {
     @Inject(FirebaseTokenVerifier)
     private readonly firebaseTokenVerifier: FirebaseTokenVerifier,
     @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(PlayerInvitationActivationService)
+    private readonly invitationActivation: PlayerInvitationActivationService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -45,10 +48,13 @@ export class AuthenticationGuard implements CanActivate {
       );
     }
 
-    const user = await this.prisma.user.findUnique({
+    let user = await this.prisma.user.findUnique({
       where: { authProviderId: identity.authProviderId },
       select: authenticatedUserSelect,
     });
+    if (!user) {
+      user = await this.invitationActivation.activate(identity);
+    }
     const allowUnonboarded = this.reflector.getAllAndOverride<boolean>(
       ALLOW_UNONBOARDED_KEY,
       [context.getHandler(), context.getClass()],

@@ -25,8 +25,9 @@ Roles: PLAYER, ADMIN.
 | Create one-off match | no | yes |
 | Manage schedule | no | yes |
 | Manage players | no | yes |
+| Invite a Guest to create an account | no | yes |
 
-A Player may create a persistent guest but cannot create another person's authenticated User. Guest-to-user conversion is ADMIN-only. Self-onboarding can create/link only the current user's own new regular Player; it cannot claim or link an existing guest. The initial ADMIN is provisioned out-of-band during deployment.
+A Player may create a persistent guest but cannot create another person's authenticated User. Guest-to-user invitation and the advanced UID conversion fallback are ADMIN-only. An invitation reserves the Guest for the invited Firebase identity but does not change the Guest into a regular Player until that identity signs in. Self-onboarding can create/link only the current user's own new regular Player; it cannot claim or link an existing guest or bypass an invitation. The initial ADMIN is provisioned out-of-band during deployment.
 
 ## Participant authorization clarification
 
@@ -39,6 +40,14 @@ Before start:
 
 ## Firebase bootstrap
 On first authenticated access the backend validates the Firebase token. If no application User exists, explicit onboarding creates/links a User and Player. Do not infer identity solely from a Firebase display name. Player ID is permanent.
+
+An ADMIN may instead invite a Guest by email. Teamizer creates or reuses the
+email's unlinked Firebase identity, records a durable reservation, and delivers
+Firebase password setup through either Firebase's password-reset email or the
+configured custom sender. After the recipient chooses a password and signs in
+normally, the backend atomically creates the User against the existing Player
+and changes only `Player.type` to `REGULAR`. No temporary password is disclosed,
+and no Dynamic Link or passwordless sign-in is used.
 
 ## Inactive players
 Inactive Players retain their identity and all historical data. They cannot register for matches, be added as participants, generate teams, start matches, score matches or complete matches. Admins can still view and manage inactive Players and their history. An inactive Player cannot be reactivated by themselves.

@@ -1,6 +1,7 @@
 import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
+  IsEmail,
   IsInt,
   IsEnum,
   IsIn,
@@ -60,6 +61,15 @@ export class ConvertGuestRequestDto {
     message: 'authProviderId must contain a non-whitespace character',
   })
   authProviderId!: string;
+}
+
+export class InviteGuestRequestDto {
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toLowerCase() : value,
+  )
+  @IsEmail()
+  @MaxLength(254)
+  email!: string;
 }
 
 export class UpdatePlayerRequestDto {
@@ -152,6 +162,10 @@ export type CurrentUserResponseDto = {
 export type ConvertedGuestResponseDto = {
   user: UserDto;
   player: AdminPlayerDto;
+};
+
+export type PlayerInvitationResponseDto = {
+  status: 'SENT' | 'ACCEPTED';
 };
 
 export type PlayerStatisticsSummaryDto = {

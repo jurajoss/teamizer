@@ -95,6 +95,31 @@ atomic Start decision commits. The shared deterministic order for Start is
 Match row first, then GOING Player rows by UUID; attendance mutations take only
 the Match lock and do not invert that order.
 
+## Guest invitation and activation
+
+Invitation send, activation, and UID fallback all lock the target Player row
+before changing its account linkage. One `PlayerInvitation` row exists per
+Player and per normalized email. Sending records a random attempt token and
+start time while holding the Player lock; another request receives
+`409 INVITATION_IN_PROGRESS` until the configured lease expires. External
+Firebase/email calls happen outside the database transaction. Every later write
+is fenced by the attempt token, and retry adopts a Firebase identity previously
+created for the same normalized email.
+
+Resend receives the attempt token as its provider idempotency key. Firebase's
+password-reset send operation has no Teamizer idempotency-key field, so the
+database lease prevents overlapping requests but cannot make an ambiguous
+provider acceptance atomic. A retry after a timeout at the delivery boundary
+may send another reset email; it still reuses the same Firebase identity and
+cannot create another Player or User.
+
+First authenticated activation locks the same Player, rechecks the invitation
+UID/email and absence of a User, then creates the User, changes `Player.type`,
+and marks the invitation accepted in one transaction. Concurrent self-
+onboarding cannot replace the Guest: the authentication guard claims a pending
+email reservation before exposing onboarding. UID fallback cannot run while a
+send attempt is active and cannot override a different reserved UID.
+
 ## Complete Match transaction
 
 ### Canonical completion request

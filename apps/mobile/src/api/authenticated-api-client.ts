@@ -23,6 +23,7 @@ import {
   convertGuestInputSchema,
   convertedGuestResponseSchema,
   type ConvertedGuestResponse,
+  inviteGuestInputSchema,
   currentUserResponseSchema,
   idempotencyKeySchema,
   matchDetailSchema,
@@ -37,9 +38,11 @@ import {
   matchParticipantSchema,
   playerDetailSchema,
   type PlayerDetail,
+  type PlayerInvitationResponse,
   playerMatchHistoryPageSchema,
   type PlayerMatchHistoryPage,
   playerStatisticsSchema,
+  playerInvitationResponseSchema,
   playersPageSchema,
   type PlayersPage,
   type PlayerStatistics,
@@ -274,6 +277,19 @@ export class AuthenticatedApiClient {
     return this.requestData(
       `/players/${validatedPlayerId}/convert-to-user`,
       convertedGuestResponseSchema,
+      { method: 'POST', body: JSON.stringify(input) },
+    );
+  }
+
+  inviteGuest(
+    playerId: string,
+    email: string,
+  ): Promise<PlayerInvitationResponse> {
+    const validatedPlayerId = matchIdSchema.parse(playerId);
+    const input = inviteGuestInputSchema.parse({ email });
+    return this.requestData(
+      `/players/${validatedPlayerId}/invite`,
+      playerInvitationResponseSchema,
       { method: 'POST', body: JSON.stringify(input) },
     );
   }

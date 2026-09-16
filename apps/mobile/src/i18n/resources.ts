@@ -251,6 +251,12 @@ export const resources = {
         photoRemoved: 'Player photo has been removed.',
         conversionSuccess:
           'Guest converted. The Player identity and history were preserved.',
+        invitationSent:
+          'Invitation sent. The Guest will become a user after signing in.',
+        invitationAlreadyAccepted:
+          'The Player signed in while the invitation was being prepared. Their existing Player is now linked.',
+        invitationFailed:
+          'The invitation could not be sent. Check the email and try again.',
         saveFailed: 'The change could not be saved.',
         missingId: 'This administrative link is missing a valid Player ID.',
         unavailable: 'Player unavailable',
@@ -264,6 +270,17 @@ export const resources = {
         ratings: 'Internal balancing ratings',
         ratingsHint:
           'These 1–10 values affect future team generation and are never shown to normal Players.',
+        accountAccess: 'Account access',
+        inviteAsUser: 'Invite as user',
+        invitationHint:
+          'The Player will receive a secure link, choose a password, and sign in with this email.',
+        email: 'Email',
+        invalidEmail: 'Enter a valid email address.',
+        sendInvitation: 'Send invitation',
+        sendInvitationHint:
+          'Creates or reuses the account identity and sends a password setup link.',
+        advancedOptions: 'Advanced options',
+        hideAdvanced: 'Hide advanced options',
         conversion: 'Guest conversion',
         linkIdentity: 'Link a provisioned Firebase identity',
         conversionHint:
@@ -531,7 +548,21 @@ export const resources = {
           'That Firebase identity is already linked to another Player.',
         PLAYER_ALREADY_HAS_USER: 'This Player already has a Teamizer account.',
         IDENTITY_PROVIDER_UNAVAILABLE:
-          'Firebase identities cannot be verified right now.',
+          'Account identities cannot be prepared right now. Try again later.',
+        INVITATION_DELIVERY_FAILED:
+          'The invitation email was not delivered. It is safe to try again.',
+        INVITATION_EMAIL_ALREADY_LINKED:
+          'That email is already reserved for another Player.',
+        INVITATION_EMAIL_MISMATCH:
+          'This Player already has an invitation for a different email.',
+        INVITATION_IDENTITY_ALREADY_LINKED:
+          'That account identity is already linked to another Player.',
+        INVITATION_IDENTITY_CHANGED:
+          'The account behind that email changed. An administrator must review it.',
+        INVITATION_IDENTITY_CONFLICT:
+          'This Player already has an invitation for another account identity.',
+        INVITATION_IN_PROGRESS:
+          'An invitation is already being prepared. Wait a moment and try again.',
       },
       foundation: {
         ready: 'Getting things ready',
@@ -794,6 +825,12 @@ export const resources = {
         photoRemoved: 'Fotka hráče byla odebrána.',
         conversionSuccess:
           'Host byl převeden. Identita a historie hráče zůstaly zachovány.',
+        invitationSent:
+          'Pozvánka byla odeslána. Host se stane uživatelem po přihlášení.',
+        invitationAlreadyAccepted:
+          'Hráč se přihlásil během přípravy pozvánky. Jeho existující hráč je nyní propojen.',
+        invitationFailed:
+          'Pozvánku se nepodařilo odeslat. Zkontrolujte e-mail a zkuste to znovu.',
         saveFailed: 'Změnu se nepodařilo uložit.',
         missingId: 'Odkaz neobsahuje platné ID hráče.',
         unavailable: 'Hráč není dostupný',
@@ -807,6 +844,17 @@ export const resources = {
         ratings: 'Interní hodnocení vyvážení',
         ratingsHint:
           'Hodnoty 1–10 ovlivňují budoucí sestavení týmů a běžní hráči je nevidí.',
+        accountAccess: 'Přístup k účtu',
+        inviteAsUser: 'Pozvat jako uživatele',
+        invitationHint:
+          'Hráč dostane bezpečný odkaz, zvolí si heslo a přihlásí se tímto e-mailem.',
+        email: 'E-mail',
+        invalidEmail: 'Zadejte platnou e-mailovou adresu.',
+        sendInvitation: 'Odeslat pozvánku',
+        sendInvitationHint:
+          'Vytvoří nebo použije existující identitu účtu a odešle odkaz pro nastavení hesla.',
+        advancedOptions: 'Pokročilé možnosti',
+        hideAdvanced: 'Skrýt pokročilé možnosti',
         conversion: 'Převod hosta',
         linkIdentity: 'Propojit připravenou identitu Firebase',
         conversionHint:
@@ -1070,7 +1118,21 @@ export const resources = {
         AUTH_PROVIDER_ALREADY_LINKED:
           'Tato identita Firebase je již propojena s jiným hráčem.',
         PLAYER_ALREADY_HAS_USER: 'Tento hráč už má účet Teamizer.',
-        IDENTITY_PROVIDER_UNAVAILABLE: 'Identity Firebase nyní nelze ověřit.',
+        IDENTITY_PROVIDER_UNAVAILABLE:
+          'Identity účtů nyní nelze připravit. Zkuste to později.',
+        INVITATION_DELIVERY_FAILED:
+          'E-mail s pozvánkou nebyl doručen. Můžete to bezpečně zkusit znovu.',
+        INVITATION_EMAIL_ALREADY_LINKED:
+          'Tento e-mail je už rezervován pro jiného hráče.',
+        INVITATION_EMAIL_MISMATCH: 'Tento hráč už má pozvánku pro jiný e-mail.',
+        INVITATION_IDENTITY_ALREADY_LINKED:
+          'Tato identita účtu je už propojena s jiným hráčem.',
+        INVITATION_IDENTITY_CHANGED:
+          'Účet za tímto e-mailem se změnil. Musí ho zkontrolovat administrátor.',
+        INVITATION_IDENTITY_CONFLICT:
+          'Tento hráč už má pozvánku pro jinou identitu účtu.',
+        INVITATION_IN_PROGRESS:
+          'Pozvánka se už připravuje. Chvíli počkejte a zkuste to znovu.',
       },
       foundation: {
         ready: 'Připravuji vše potřebné',

@@ -124,6 +124,45 @@ describeWithDatabase('PostgreSQL domain schema', () => {
     ).rejects.toThrow();
   });
 
+  it('enforces one durable invitation per Player, email, and Firebase identity', async () => {
+    const firstPlayer = await createPlayer('First invited Player');
+    const secondPlayer = await createPlayer('Second invited Player');
+    const invitation = await prisma.playerInvitation.create({
+      data: {
+        playerId: firstPlayer.id,
+        email: 'invited@example.com',
+        authProviderId: 'invited-firebase-uid',
+      },
+    });
+
+    expect(invitation.status).toBe('PENDING');
+    await expect(
+      prisma.playerInvitation.create({
+        data: {
+          playerId: firstPlayer.id,
+          email: 'other@example.com',
+        },
+      }),
+    ).rejects.toThrow();
+    await expect(
+      prisma.playerInvitation.create({
+        data: {
+          playerId: secondPlayer.id,
+          email: 'invited@example.com',
+        },
+      }),
+    ).rejects.toThrow();
+    await expect(
+      prisma.playerInvitation.create({
+        data: {
+          playerId: secondPlayer.id,
+          email: 'second@example.com',
+          authProviderId: 'invited-firebase-uid',
+        },
+      }),
+    ).rejects.toThrow();
+  });
+
   it('enforces MatchParticipant uniqueness', async () => {
     const match = await createMatch('Attendance sport');
     const player = await createPlayer('Attendee');

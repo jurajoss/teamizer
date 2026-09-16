@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { PlayerType, Prisma } from '@prisma/client';
+import { ConfigService } from '@nestjs/config';
+import { PlayerInvitationStatus, PlayerType, Prisma } from '@prisma/client';
 
 import {
   authenticatedUserSelect,
@@ -15,11 +16,17 @@ import type {
 
 @Injectable()
 export class PlayerIdentityService {
+  private readonly invitationAttemptLeaseMilliseconds: number;
+
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(FirebaseIdentityLookup)
     private readonly firebaseIdentityLookup: FirebaseIdentityLookup,
-  ) {}
+    @Inject(ConfigService) config: ConfigService,
+  ) {
+    this.invitationAttemptLeaseMilliseconds =
+      config.getOrThrow<number>('INVITATION_ATTEMPT_LEASE_SECONDS') * 1_000;
+  }
 
   async onboard(
     authProviderId: string,
@@ -103,6 +110,14 @@ export class PlayerIdentityService {
           select: {
             type: true,
             user: { select: { id: true } },
+            invitation: {
+              select: {
+                id: true,
+                authProviderId: true,
+                attemptToken: true,
+                attemptStartedAt: true,
+              },
+            },
           },
         });
 
@@ -122,6 +137,11 @@ export class PlayerIdentityService {
           );
         }
 
+        this.assertInvitationAllowsUidFallback(
+          player.invitation,
+          authProviderId,
+        );
+
         const linkedIdentity = await transaction.user.findUnique({
           where: { authProviderId },
           select: { id: true },
@@ -139,6 +159,22 @@ export class PlayerIdentityService {
           where: { id: playerId },
           data: { type: PlayerType.REGULAR },
         });
+
+        if (player.invitation) {
+          const acceptsInvitation =
+            player.invitation.authProviderId === authProviderId;
+          await transaction.playerInvitation.update({
+            where: { id: player.invitation.id },
+            data: {
+              status: acceptsInvitation
+                ? PlayerInvitationStatus.ACCEPTED
+                : PlayerInvitationStatus.REVOKED,
+              acceptedAt: acceptsInvitation ? new Date() : null,
+              attemptToken: null,
+              attemptStartedAt: null,
+            },
+          });
+        }
 
         return transaction.user.create({
           data: {
@@ -179,7 +215,17 @@ export class PlayerIdentityService {
   ): Promise<void> {
     const player = await this.prisma.player.findUnique({
       where: { id: playerId },
-      select: { type: true, user: { select: { id: true } } },
+      select: {
+        type: true,
+        user: { select: { id: true } },
+        invitation: {
+          select: {
+            authProviderId: true,
+            attemptToken: true,
+            attemptStartedAt: true,
+          },
+        },
+      },
     });
 
     if (!player) {
@@ -203,6 +249,7 @@ export class PlayerIdentityService {
         'Only a guest Player can be converted.',
       );
     }
+    this.assertInvitationAllowsUidFallback(player.invitation, authProviderId);
 
     const linkedIdentity = await this.prisma.user.findUnique({
       where: { authProviderId },
@@ -236,6 +283,38 @@ export class PlayerIdentityService {
         422,
         'FIREBASE_IDENTITY_NOT_FOUND',
         'The supplied identity does not exist.',
+      );
+    }
+  }
+
+  private assertInvitationAllowsUidFallback(
+    invitation: {
+      authProviderId: string | null;
+      attemptToken: string | null;
+      attemptStartedAt: Date | null;
+    } | null,
+    authProviderId: string,
+  ): void {
+    if (
+      invitation?.attemptToken &&
+      invitation.attemptStartedAt &&
+      invitation.attemptStartedAt.getTime() >
+        Date.now() - this.invitationAttemptLeaseMilliseconds
+    ) {
+      throw new ApiError(
+        409,
+        'INVITATION_IN_PROGRESS',
+        'Wait for the invitation attempt to finish before using UID conversion.',
+      );
+    }
+    if (
+      invitation?.authProviderId &&
+      invitation.authProviderId !== authProviderId
+    ) {
+      throw new ApiError(
+        409,
+        'INVITATION_IDENTITY_CONFLICT',
+        'This Player already has an invitation for another Firebase identity.',
       );
     }
   }

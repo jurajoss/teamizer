@@ -771,6 +771,7 @@ describe('AuthenticatedApiClient', () => {
       .mockResolvedValueOnce(jsonResponse(adminDetail))
       .mockResolvedValueOnce(jsonResponse(publicDetail))
       .mockResolvedValueOnce(jsonResponse(adminDetail))
+      .mockResolvedValueOnce(jsonResponse({ status: 'SENT' }, 201))
       .mockResolvedValueOnce(jsonResponse(converted, 201));
     const client = new AuthenticatedApiClient(
       'https://api.example.test',
@@ -789,6 +790,10 @@ describe('AuthenticatedApiClient', () => {
       status: 'INACTIVE',
       attributes: adminDetail.attributes,
     });
+    const invitation = await client.inviteGuest(
+      playerId,
+      '  PLAYER@Example.COM ',
+    );
     const conversion = await client.convertGuest(
       playerId,
       '  pre-provisioned-firebase-uid  ',
@@ -796,12 +801,14 @@ describe('AuthenticatedApiClient', () => {
 
     expect(list.items[0]).not.toHaveProperty('attributes');
     expect(detail.attributes).toEqual(adminDetail.attributes);
+    expect(invitation.status).toBe('SENT');
     expect(conversion.player.id).toBe(playerId);
     expect(fetchImplementation.mock.calls.map(([url]) => url)).toEqual([
       'https://api.example.test/players?limit=25&q=Updated&status=ALL',
       `https://api.example.test/players/${playerId}`,
       `https://api.example.test/players/${playerId}`,
       `https://api.example.test/players/${playerId}`,
+      `https://api.example.test/players/${playerId}/invite`,
       `https://api.example.test/players/${playerId}/convert-to-user`,
     ]);
     expect(fetchImplementation.mock.calls[2]?.[1]).toMatchObject({
@@ -809,6 +816,10 @@ describe('AuthenticatedApiClient', () => {
       body: JSON.stringify({ name: 'Updated Player' }),
     });
     expect(fetchImplementation.mock.calls[4]?.[1]).toMatchObject({
+      method: 'POST',
+      body: JSON.stringify({ email: 'player@example.com' }),
+    });
+    expect(fetchImplementation.mock.calls[5]?.[1]).toMatchObject({
       method: 'POST',
       body: JSON.stringify({
         authProviderId: 'pre-provisioned-firebase-uid',

@@ -1,5 +1,8 @@
 import { Module } from '@nestjs/common';
 
+import { invitationEmailSenderProvider } from '../invitations/invitation-email.provider';
+import { PlayerInvitationService } from '../invitations/player-invitation.service';
+
 import { MeController } from './me.controller';
 import { OnboardingController } from './onboarding.controller';
 import { PlayerIdentityService } from './player-identity.service';
@@ -16,7 +19,9 @@ import { RankingsController } from './rankings.controller';
     RankingsController,
   ],
   providers: [
+    invitationEmailSenderProvider,
     PlayerIdentityService,
+    PlayerInvitationService,
     PlayerProfileService,
     PlayerStatisticsService,
   ],

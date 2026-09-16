@@ -32,8 +32,11 @@ All endpoints except `GET /health` require `Authorization: Bearer <Firebase ID
 token>`. The backend validates Firebase issuer, audience, expiry, and subject,
 then resolves `authProviderId` to a Teamizer User.
 
-If the Firebase identity is valid but not onboarded, only `POST /onboarding`
-is available; other authenticated endpoints return `403 ONBOARDING_REQUIRED`.
+If the Firebase identity is valid but not onboarded, the authentication guard
+first checks for a matching invitation UID (or an unassigned reservation for
+the token's normalized email). A match atomically activates the existing Guest.
+Only an identity with neither a User nor invitation may use `POST /onboarding`;
+other authenticated endpoints return `403 ONBOARDING_REQUIRED`.
 
 Any endpoint described as requiring an active player rejects a User whose
 Player is `INACTIVE` with `403 PLAYER_INACTIVE`. ADMIN authority does not let an
@@ -302,6 +305,48 @@ failures cannot cause unbounded live-object growth.
   that Application Default Credentials can perform Admin `getUser`; local and
   deployed API credentials must target the configured project and have
   `firebaseauth.users.get` permission.
+
+This route is the advanced operational fallback. It rejects
+`INVITATION_IN_PROGRESS` while an email send owns the Player lock/lease and
+`INVITATION_IDENTITY_CONFLICT` when a different Firebase UID is already
+reserved; it never silently transfers an invitation.
+
+### `POST /players/:playerId/invite`
+
+- **Authentication/authorization:** active ADMIN only.
+- **Body:** `{ "email": "player@example.com" }`. The API trims and lowercases
+  the address and validates it as an email up to 254 characters.
+- **Behavior:** row-locks the existing Guest, creates or reclaims one durable
+  invitation attempt, then uses Firebase Admin `getUserByEmail`. An existing
+  unlinked identity is reused; otherwise `createUser` creates an identity with
+  no server-known password. The resolved UID is persisted before the configured
+  sender delivers password setup. With the `firebase` sender, the API calls the
+  project-scoped Identity Toolkit `accounts:sendOobCode` operation using ADC and
+  `requestType=PASSWORD_RESET`; Firebase sends its configured template and
+  keeps the OOB code out of Teamizer. With `resend`, Firebase Admin
+  `generatePasswordResetLink` creates the setup link and Resend transmits the
+  bilingual Teamizer invitation. The action link is never persisted or logged.
+  The Guest remains unchanged until the recipient signs in. Neither path uses
+  Firebase Dynamic Links or passwordless email-link sign-in.
+- **201:** `{ "status": "SENT" }`; the same email may be submitted again to
+  generate and send a fresh setup link. In the narrow race where the existing
+  identity signs in during preparation, activation wins and the endpoint
+  returns `{ "status": "ACCEPTED" }` without sending a redundant email.
+- **409:** `PLAYER_ALREADY_HAS_USER`, `INVITATION_IN_PROGRESS`,
+  `INVITATION_EMAIL_ALREADY_LINKED`, `INVITATION_EMAIL_MISMATCH`,
+  `INVITATION_IDENTITY_ALREADY_LINKED`, or `INVITATION_IDENTITY_CHANGED`.
+- **422:** `PLAYER_IS_NOT_GUEST`.
+- **503:** `IDENTITY_PROVIDER_UNAVAILABLE` or
+  `INVITATION_DELIVERY_FAILED`. Provider-specific details are not returned.
+
+Firebase creation, PostgreSQL, and email delivery are deliberately a recoverable
+saga rather than fake distributed atomicity. If Firebase creation succeeds
+before UID persistence, retry finds the identity by email. Once the UID is
+persisted, email failure clears the claim but retains the reservation so retry
+reuses it. A process crash leaves a short claim lease that another request may
+reclaim. Provider acceptance is the external side-effect boundary; a crash at
+that exact boundary can result in a duplicate invitation on a later retry, but
+cannot create a duplicate User or Player.
 
 ### `GET /players/:playerId/statistics`
 

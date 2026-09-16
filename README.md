@@ -50,6 +50,16 @@ unless Expo push security is enabled for the EAS project.
 `PUSH_PROVIDER_TIMEOUT_MS` defaults to 30000 and bounds each provider attempt;
 it must remain below the documented two-minute reminder claim lease.
 
+Guest invitation email uses
+`INVITATION_EMAIL_DRIVER=development|firebase|resend`. Development/test
+processes default to the safe non-sending driver. A `NODE_ENV=production`
+process must explicitly select `firebase` or `resend`; production never falls
+back to the development sender. The Firebase driver needs no mail-domain or
+Resend configuration. The Resend driver requires `INVITATION_EMAIL_FROM` plus
+`RESEND_API_KEY`; reply-to is optional. Provider calls default to a 10-second
+timeout. `INVITATION_ATTEMPT_LEASE_SECONDS` defaults to 120 so a process crash
+can be reclaimed without permitting simultaneous sends.
+
 Player avatars use a focused storage adapter selected by
 `AVATAR_STORAGE_DRIVER=local|gcs`. Development defaults to `local` files under
 `.data/avatars`; set `AVATAR_STORAGE_DIRECTORY` to another writable path if
@@ -159,9 +169,10 @@ The API verifies Firebase ID tokens with the Firebase Admin SDK and maps the
 verified Firebase UID to `User.authProviderId`. It uses Application Default
 Credentials. In local development, point `GOOGLE_APPLICATION_CREDENTIALS` to
 the absolute path of a readable service-account JSON file for the same project
-as `FIREBASE_PROJECT_ID`; never commit that file. The service account must be
-allowed to read Firebase Authentication users (`firebaseauth.users.get`, for
-example through the Firebase Authentication Admin role). In an environment
+as `FIREBASE_PROJECT_ID`; never commit that file. The service account must have
+the Firebase Authentication operations Teamizer uses:
+`firebaseauth.users.get`, `firebaseauth.users.create`, and
+`firebaseauth.users.sendEmail`. In an environment
 that already provides Application Default Credentials with that permission,
 the path variable may be omitted.
 
@@ -177,20 +188,63 @@ The API and mobile project IDs must name the project containing the UID. Restart
 the API after changing its environment. A successfully verified bearer token
 does not prove `getUser(uid)` access: token signature verification can succeed
 while Admin user lookup fails because ADC is missing, targets another project,
-or lacks IAM permission. In that case conversion returns the sanitized
-`IDENTITY_PROVIDER_UNAVAILABLE` response and the API log reports only a safe
-failure category/provider code and configured project ID, never credentials or
-tokens.
+or lacks IAM permission. The previously observed Cloud Run
+`auth/internal-error` wraps Identity Toolkit's `USER_PROJECT_DENIED` response
+when the ADC quota project does not grant the runtime identity
+`serviceusage.services.use`. `roles/firebaseauth.viewer` alone does not provide
+that permission and cannot create identities or action links. The TEST runtime
+therefore also needs `roles/serviceusage.serviceUsageConsumer` on its Cloud Run
+quota project. On failure, the API returns `IDENTITY_PROVIDER_UNAVAILABLE`; its log
+contains only a safe category, provider code/reason, and configured project ID,
+never email, UID, credentials, action links, or tokens.
 
 The mobile app uses Firebase's client SDK with email/password authentication.
 In the Firebase console, register a web app for the project and enable the
-Email/Password sign-in provider. Firebase accounts are provisioned out of band;
-the MVP app does not provide public account creation or password reset.
+Email/Password sign-in provider. An active ADMIN can invite a Guest by email.
+The API reuses an unlinked Firebase identity for that normalized email or
+creates one without assigning a password. Delivery then depends on the selected
+invitation sender. `firebase` asks the project-scoped Identity Toolkit
+`accounts:sendOobCode` operation to send a `PASSWORD_RESET` email directly;
+`resend` generates a Firebase password-reset action link and embeds it in the
+custom Teamizer message. The recipient chooses a password in Firebase's hosted
+browser flow and signs in normally. Neither path uses Dynamic Links,
+passwordless email-link sign-in, universal links, or Teamizer deep linking.
+There is no public account creation or general password-reset UI in Teamizer.
 
-ADMIN guest conversion trims the supplied UID and verifies it through Firebase
-Admin before mutating the permanent Player identity. A missing identity is
-rejected without changing the guest; Teamizer never creates the Firebase
-account.
+`PlayerInvitation` durably reserves the Guest before delivery. The resolved UID
+is stored before the action link is sent, but the Player stays `GUEST` without a
+User. On the invitee's first authenticated request, Teamizer creates the User
+and changes that same Player to `REGULAR` in one transaction, preserving its ID,
+avatar, attributes, memberships, history, and statistics. Failed identity or
+email stages are safe to retry. The advanced ADMIN UID conversion still
+verifies an already provisioned identity and remains available when no
+incompatible invitation owns the Player.
+
+Local development defaults to `INVITATION_EMAIL_DRIVER=development`. It accepts
+the operation without transmitting or logging the recipient/action link. TEST
+without a custom mail domain uses `INVITATION_EMAIL_DRIVER=firebase`. Future
+production may use `INVITATION_EMAIL_DRIVER=resend` after configuring a
+domain-verified sender and storing `RESEND_API_KEY` in Secret Manager. Resend's
+invitation is a focused bilingual Czech/English template; Firebase uses the
+project's configured password-reset template. Passwords, action links, provider
+secrets, and email bodies are not stored in PostgreSQL.
+
+The Firebase sender obtains a short-lived OAuth access token from the same
+Application Default Credential used by Firebase Admin and calls
+`POST https://identitytoolkit.googleapis.com/v1/projects/<FIREBASE_PROJECT_ID>/accounts:sendOobCode`
+with `requestType=PASSWORD_RESET`, `canHandleCodeInApp=false`, and
+`returnOobLink=false`. No action-code settings, continue URL, `linkDomain`, or
+deprecated `dynamicLinkDomain` are supplied. Firebase therefore uses its
+default web-first action handler on the project's Firebase Hosting domain,
+normally
+`https://<FIREBASE_PROJECT_ID>.firebaseapp.com/__/auth/action?...`. The API
+never receives or logs the generated `oobCode`.
+
+Configure the Firebase version in **Firebase Console → Authentication →
+Templates → Password reset**. TEST may customize the sender/project display
+name, reply-to, subject, and password-reset message there. Leave the action URL
+on Firebase's default hosted handler for this MVP; no mobile link or custom
+handler is required.
 
 Copy `apps/mobile/.env.example` to `apps/mobile/.env` and set the public API URL
 plus the Firebase web-app values:
@@ -213,8 +267,9 @@ The EAS project ID is public configuration used to request an Expo push token;
 push-provider access tokens and Firebase Admin credentials remain server-only.
 
 All routes except the readiness endpoint `GET /health` require a bearer token.
-A valid Firebase identity without a Teamizer User may call only
-`POST /onboarding`. Implemented endpoints in this phase are:
+The authentication guard activates a matching invitation before deciding that
+an otherwise valid Firebase identity may call only `POST /onboarding`.
+Implemented endpoints in this phase are:
 
 ```text
 GET  /health
@@ -226,6 +281,7 @@ GET  /players/:playerId
 PATCH /players/:playerId
 POST /players/:playerId/avatar
 DELETE /players/:playerId/avatar
+POST /players/:playerId/invite
 GET  /players/:playerId/statistics
 GET  /players/:playerId/matches
 POST /players/:playerId/convert-to-user
@@ -413,7 +469,7 @@ are intentionally local-only values; do not reuse them in Cloud Run:
 docker run --rm --name teamizer-api-cloud-run-test \
   --add-host=host.docker.internal:host-gateway \
   --publish 8080:8080 \
-  --env NODE_ENV=production \
+  --env NODE_ENV=development \
   --env PORT=8080 \
   --env 'DATABASE_URL=postgresql://teamizer:teamizer@host.docker.internal:5432/teamizer?schema=public' \
   --env FIREBASE_PROJECT_ID=replace-with-firebase-project-id \
@@ -423,6 +479,7 @@ docker run --rm --name teamizer-api-cloud-run-test \
   --env AVATAR_STORAGE_DRIVER=local \
   --env AVATAR_STORAGE_DIRECTORY=/tmp/teamizer-avatars \
   --env AVATAR_PUBLIC_BASE_URL=http://localhost:8080 \
+  --env INVITATION_EMAIL_DRIVER=development \
   teamizer-api:cloud-run-test
 ```
 
@@ -448,17 +505,25 @@ Set these non-secret environment variables on the TEST service:
 - `AVATAR_GCS_OBJECT_PREFIX=environments/test` (optional but recommended when
   sharing a bucket)
 - `AVATAR_PUBLIC_BASE_URL=<public HTTPS origin of the TEST API>`
+- `INVITATION_EMAIL_DRIVER=firebase` for TEST without a custom mail domain
+- `INVITATION_EMAIL_FROM=<address on a verified sending domain>` only for the
+  future `resend` driver
+- `INVITATION_EMAIL_REPLY_TO=<support address>` only for `resend` (optional)
+- `INVITATION_EMAIL_TIMEOUT_MS=10000` (optional; default shown)
+- `INVITATION_ATTEMPT_LEASE_SECONDS=120` (optional; default shown)
 
 `PORT` is supplied by Cloud Run and does not need to be configured. The
 existing defaults remain available for `SCHEDULER_TICK_INTERVAL_MS`,
 `PUSH_PROVIDER_TIMEOUT_MS`, `AVATAR_MAX_UPLOAD_BYTES`, and
-`AVATAR_URL_TTL_SECONDS`.
+`AVATAR_URL_TTL_SECONDS`, `INVITATION_EMAIL_TIMEOUT_MS`, and
+`INVITATION_ATTEMPT_LEASE_SECONDS`.
 
 Provide these through Secret Manager as runtime environment variables:
 
 - `DATABASE_URL`
 - `PROPOSAL_RECEIPT_SECRET`
 - `AVATAR_URL_SECRET`
+- `RESEND_API_KEY` only when `INVITATION_EMAIL_DRIVER=resend`
 - `EXPO_PUSH_ACCESS_TOKEN` only when authenticated Expo push delivery is used
 
 For Cloud SQL over its Unix socket, store the complete Prisma URL in the
@@ -466,15 +531,79 @@ For Cloud SQL over its Unix socket, store the complete Prisma URL in the
 `postgresql://USER:PASSWORD@localhost/DB?host=/cloudsql/PROJECT:REGION:INSTANCE&schema=public`.
 Percent-encode credential characters that are reserved in URLs.
 
-Firebase Admin continues to use Application Default Credentials. Do not set
+Firebase Admin and the Firebase invitation sender use Application Default
+Credentials. Do not set
 `GOOGLE_APPLICATION_CREDENTIALS` on Cloud Run and do not mount a service-account
 key. GCS uses the same Cloud Run service identity. Attach a dedicated runtime
 service account with Cloud SQL Client, access to the referenced Secret Manager
-secrets, permission to read Firebase Authentication users (for example
-Firebase Authentication Admin), and bucket-level Storage Object User
-(`roles/storage.objectUser`) on only the avatar bucket. That storage role
+secrets, Firebase Authentication user get/create/action-email permissions,
+Service Usage Consumer on the Cloud Run quota project, and bucket-level Storage
+Object User (`roles/storage.objectUser`) on only the avatar bucket. That storage role
 provides the object create/read/delete operations used by replacement and
 display without granting bucket administration.
+
+Enable Identity Toolkit and grant the TEST runtime the Firebase operations.
+The predefined Firebase Authentication Admin role is the simple TEST choice. A
+production custom role may narrow it to `firebaseauth.users.get`,
+`firebaseauth.users.create`, and `firebaseauth.users.sendEmail`. Service Usage
+Consumer supplies `serviceusage.services.use`, fixing the quota-project denial
+that Firebase Admin otherwise reports as `auth/internal-error`. The direct
+Firebase email operation uses the same ADC identity and requires
+`firebaseauth.users.sendEmail`; it does not require a Web API key.
+`getUser(uid)` and `getUserByEmail(email)` both use
+`firebaseauth.users.get`; `createUser` uses `firebaseauth.users.create`; and
+`generatePasswordResetLink` uses `firebaseauth.users.sendEmail`.
+
+```bash
+export PROJECT_ID='teamizer-test'
+export FIREBASE_PROJECT_ID='teamizer-eb26f'
+export RUNTIME_SERVICE_ACCOUNT='teamizer-api@teamizer-test.iam.gserviceaccount.com'
+
+gcloud services enable identitytoolkit.googleapis.com \
+  --project="${FIREBASE_PROJECT_ID}"
+
+gcloud services enable identitytoolkit.googleapis.com \
+  --project="${PROJECT_ID}"
+
+gcloud projects add-iam-policy-binding "${FIREBASE_PROJECT_ID}" \
+  --member="serviceAccount:${RUNTIME_SERVICE_ACCOUNT}" \
+  --role='roles/firebaseauth.admin'
+
+gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
+  --member="serviceAccount:${RUNTIME_SERVICE_ACCOUNT}" \
+  --role='roles/serviceusage.serviceUsageConsumer'
+
+gcloud projects get-iam-policy "${FIREBASE_PROJECT_ID}" \
+  --flatten='bindings[].members' \
+  --filter="bindings.members:serviceAccount:${RUNTIME_SERVICE_ACCOUNT}" \
+  --format='table(bindings.role)'
+
+gcloud projects get-iam-policy "${PROJECT_ID}" \
+  --flatten='bindings[].members' \
+  --filter="bindings.members:serviceAccount:${RUNTIME_SERVICE_ACCOUNT}" \
+  --format='table(bindings.role)'
+```
+
+For future Resend delivery, create the Resend secret, add its value through
+stdin, and grant only the runtime identity access. Verify the
+`INVITATION_EMAIL_FROM` domain in Resend before enabling that driver. TEST's
+Firebase driver does not need this secret; keep an existing secret in Secret
+Manager but do not expose it to the Cloud Run revision.
+
+```bash
+gcloud secrets create teamizer-test-resend-api-key \
+  --project="${PROJECT_ID}" \
+  --replication-policy=automatic
+
+gcloud secrets versions add teamizer-test-resend-api-key \
+  --project="${PROJECT_ID}" \
+  --data-file=-
+
+gcloud secrets add-iam-policy-binding teamizer-test-resend-api-key \
+  --project="${PROJECT_ID}" \
+  --member="serviceAccount:${RUNTIME_SERVICE_ACCOUNT}" \
+  --role='roles/secretmanager.secretAccessor'
+```
 
 Create and configure the TEST bucket before deployment. Bucket names are
 globally unique, so replace the example-derived value if it is already taken.
@@ -487,7 +616,7 @@ bucket-level access keep object access IAM-only.
 export PROJECT_ID='replace-with-gcp-project-id'
 export REGION='europe-west1'
 export AVATAR_GCS_BUCKET_NAME="${PROJECT_ID}-teamizer-test-avatars"
-export RUNTIME_SERVICE_ACCOUNT="teamizer-api-test@${PROJECT_ID}.iam.gserviceaccount.com"
+export RUNTIME_SERVICE_ACCOUNT="teamizer-api@${PROJECT_ID}.iam.gserviceaccount.com"
 
 gcloud services enable storage.googleapis.com \
   --project="${PROJECT_ID}"
@@ -511,17 +640,38 @@ gcloud storage buckets add-iam-policy-binding \
 gcloud storage buckets describe "gs://${AVATAR_GCS_BUCKET_NAME}"
 ```
 
-For an existing TEST Cloud Run service, apply only the avatar environment
-change with:
+For the existing TEST Cloud Run service, switch only invitation delivery from
+Resend to Firebase with the following command. The update/remove flags preserve
+all unrelated environment variables, secret mappings, Cloud SQL attachment,
+avatar/GCS configuration, service account, and scaling configuration. Removing
+the runtime mapping does not delete the Secret Manager secret.
 
 ```bash
-export API_ORIGIN='https://replace-with-test-api-origin'
+export PROJECT_ID='teamizer-test'
+export REGION='europe-west1'
+export RUNTIME_SERVICE_ACCOUNT='teamizer-api@teamizer-test.iam.gserviceaccount.com'
 
+# Deploy code that understands all three drivers while the existing Resend
+# configuration is still active. Omitting env/secret flags preserves them.
+gcloud run deploy teamizer-api-test \
+  --source=. \
+  --project="${PROJECT_ID}" \
+  --region="${REGION}" \
+  --service-account="${RUNTIME_SERVICE_ACCOUNT}" \
+  --allow-unauthenticated
+
+# Then switch only the invitation-email configuration.
 gcloud run services update teamizer-api-test \
   --project="${PROJECT_ID}" \
   --region="${REGION}" \
-  --update-env-vars="AVATAR_STORAGE_DRIVER=gcs,AVATAR_GCS_BUCKET_NAME=${AVATAR_GCS_BUCKET_NAME},AVATAR_GCS_OBJECT_PREFIX=environments/test,AVATAR_PUBLIC_BASE_URL=${API_ORIGIN}" \
-  --remove-env-vars='AVATAR_STORAGE_DIRECTORY'
+  --update-env-vars='INVITATION_EMAIL_DRIVER=firebase' \
+  --remove-env-vars='INVITATION_EMAIL_FROM,INVITATION_EMAIL_REPLY_TO' \
+  --remove-secrets='RESEND_API_KEY'
+
+gcloud run services describe teamizer-api-test \
+  --project="${PROJECT_ID}" \
+  --region="${REGION}" \
+  --format='yaml(spec.template.spec.serviceAccountName,spec.template.spec.containers[0].env)'
 ```
 
 The following is the recommended build-and-deploy template. Create the
@@ -536,7 +686,7 @@ export ARTIFACT_REPOSITORY='teamizer'
 export IMAGE_TAG='test-001'
 export FIREBASE_PROJECT_ID='replace-with-firebase-project-id'
 export CLOUD_SQL_CONNECTION_NAME='PROJECT:REGION:INSTANCE'
-export RUNTIME_SERVICE_ACCOUNT="teamizer-api-test@${PROJECT_ID}.iam.gserviceaccount.com"
+export RUNTIME_SERVICE_ACCOUNT="teamizer-api@${PROJECT_ID}.iam.gserviceaccount.com"
 export API_ORIGIN='https://replace-with-test-api-origin'
 export AVATAR_GCS_BUCKET_NAME="${PROJECT_ID}-teamizer-test-avatars"
 export IMAGE_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${ARTIFACT_REPOSITORY}/teamizer-api:${IMAGE_TAG}"
@@ -557,7 +707,7 @@ gcloud run deploy teamizer-api-test \
   --min=0 \
   --max=1 \
   --set-cloudsql-instances="$CLOUD_SQL_CONNECTION_NAME" \
-  --set-env-vars="NODE_ENV=production,FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID},SCHEDULER_ENABLED=false,AVATAR_STORAGE_DRIVER=gcs,AVATAR_GCS_BUCKET_NAME=${AVATAR_GCS_BUCKET_NAME},AVATAR_GCS_OBJECT_PREFIX=environments/test,AVATAR_PUBLIC_BASE_URL=${API_ORIGIN}" \
+  --set-env-vars="NODE_ENV=production,FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID},SCHEDULER_ENABLED=false,AVATAR_STORAGE_DRIVER=gcs,AVATAR_GCS_BUCKET_NAME=${AVATAR_GCS_BUCKET_NAME},AVATAR_GCS_OBJECT_PREFIX=environments/test,AVATAR_PUBLIC_BASE_URL=${API_ORIGIN},INVITATION_EMAIL_DRIVER=firebase,INVITATION_EMAIL_TIMEOUT_MS=10000,INVITATION_ATTEMPT_LEASE_SECONDS=120" \
   --set-secrets="DATABASE_URL=teamizer-test-database-url:latest,PROPOSAL_RECEIPT_SECRET=teamizer-test-proposal-receipt-secret:latest,AVATAR_URL_SECRET=teamizer-test-avatar-url-secret:latest"
 ```
 

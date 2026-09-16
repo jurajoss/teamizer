@@ -154,6 +154,14 @@ export const convertGuestInputSchema = z
   .object({ authProviderId: z.string().trim().min(1).max(255) })
   .strict();
 
+export const inviteGuestInputSchema = z
+  .object({ email: z.string().trim().toLowerCase().email().max(254) })
+  .strict();
+
+export const playerInvitationResponseSchema = z.object({
+  status: z.enum(['SENT', 'ACCEPTED']),
+});
+
 export const convertedGuestResponseSchema = z.object({
   user: userSchema,
   player: adminPlayerSchema,
@@ -361,6 +369,9 @@ export type UpdateAdminPlayerInput = z.infer<
 >;
 export type ConvertedGuestResponse = z.infer<
   typeof convertedGuestResponseSchema
+>;
+export type PlayerInvitationResponse = z.infer<
+  typeof playerInvitationResponseSchema
 >;
 export type RankingRow = z.infer<typeof rankingRowSchema>;
 export type RankingsPage = z.infer<typeof rankingsPageSchema>;

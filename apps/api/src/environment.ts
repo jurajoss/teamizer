@@ -6,6 +6,7 @@ const supportedNodeEnvironments = new Set([
 
 export type NodeEnvironment = 'development' | 'test' | 'production';
 export type AvatarStorageDriver = 'local' | 'gcs';
+export type InvitationEmailDriver = 'development' | 'firebase' | 'resend';
 
 export type AppEnvironment = Record<string, unknown> & {
   NODE_ENV: NodeEnvironment;
@@ -24,6 +25,12 @@ export type AppEnvironment = Record<string, unknown> & {
   AVATAR_URL_SECRET: string;
   AVATAR_MAX_UPLOAD_BYTES: number;
   AVATAR_URL_TTL_SECONDS: number;
+  INVITATION_EMAIL_DRIVER: InvitationEmailDriver;
+  INVITATION_EMAIL_FROM?: string;
+  INVITATION_EMAIL_REPLY_TO?: string;
+  INVITATION_EMAIL_TIMEOUT_MS: number;
+  INVITATION_ATTEMPT_LEASE_SECONDS: number;
+  RESEND_API_KEY?: string;
   EXPO_PUSH_ACCESS_TOKEN?: string;
 };
 
@@ -167,6 +174,57 @@ export function validateEnvironment(
     );
   }
 
+  const invitationEmailDriver = invitationEmailDriverValue(
+    environment.INVITATION_EMAIL_DRIVER,
+    nodeEnvironment as NodeEnvironment,
+  );
+  const invitationEmailFrom = optionalStringValue(
+    environment.INVITATION_EMAIL_FROM,
+    'INVITATION_EMAIL_FROM',
+  );
+  const invitationEmailReplyTo = optionalStringValue(
+    environment.INVITATION_EMAIL_REPLY_TO,
+    'INVITATION_EMAIL_REPLY_TO',
+  );
+  const resendApiKey = optionalStringValue(
+    environment.RESEND_API_KEY,
+    'RESEND_API_KEY',
+  );
+  if (invitationEmailDriver === 'resend' && !invitationEmailFrom) {
+    throw new Error(
+      'INVITATION_EMAIL_FROM is required when INVITATION_EMAIL_DRIVER is resend.',
+    );
+  }
+  if (invitationEmailDriver === 'resend' && !resendApiKey) {
+    throw new Error(
+      'RESEND_API_KEY is required when INVITATION_EMAIL_DRIVER is resend.',
+    );
+  }
+  const invitationEmailTimeoutMs = Number(
+    environment.INVITATION_EMAIL_TIMEOUT_MS ?? 10_000,
+  );
+  if (
+    !Number.isInteger(invitationEmailTimeoutMs) ||
+    invitationEmailTimeoutMs < 100 ||
+    invitationEmailTimeoutMs > 60_000
+  ) {
+    throw new Error(
+      'INVITATION_EMAIL_TIMEOUT_MS must be an integer between 100 and 60000.',
+    );
+  }
+  const invitationAttemptLeaseSeconds = Number(
+    environment.INVITATION_ATTEMPT_LEASE_SECONDS ?? 120,
+  );
+  if (
+    !Number.isInteger(invitationAttemptLeaseSeconds) ||
+    invitationAttemptLeaseSeconds < 30 ||
+    invitationAttemptLeaseSeconds > 3_600
+  ) {
+    throw new Error(
+      'INVITATION_ATTEMPT_LEASE_SECONDS must be an integer between 30 and 3600.',
+    );
+  }
+
   return {
     ...environment,
     NODE_ENV: nodeEnvironment as NodeEnvironment,
@@ -189,10 +247,43 @@ export function validateEnvironment(
     AVATAR_URL_SECRET: avatarUrlSecret,
     AVATAR_MAX_UPLOAD_BYTES: avatarMaxUploadBytes,
     AVATAR_URL_TTL_SECONDS: avatarUrlTtlSeconds,
+    INVITATION_EMAIL_DRIVER: invitationEmailDriver,
+    ...(invitationEmailFrom
+      ? { INVITATION_EMAIL_FROM: invitationEmailFrom }
+      : {}),
+    ...(invitationEmailReplyTo
+      ? { INVITATION_EMAIL_REPLY_TO: invitationEmailReplyTo }
+      : {}),
+    INVITATION_EMAIL_TIMEOUT_MS: invitationEmailTimeoutMs,
+    INVITATION_ATTEMPT_LEASE_SECONDS: invitationAttemptLeaseSeconds,
+    ...(resendApiKey ? { RESEND_API_KEY: resendApiKey } : {}),
     ...(typeof expoPushAccessToken === 'string'
       ? { EXPO_PUSH_ACCESS_TOKEN: expoPushAccessToken.trim() }
       : {}),
   };
+}
+
+function invitationEmailDriverValue(
+  value: unknown,
+  nodeEnvironment: NodeEnvironment,
+): InvitationEmailDriver {
+  const driver =
+    value ?? (nodeEnvironment === 'production' ? undefined : 'development');
+  if (
+    driver !== 'development' &&
+    driver !== 'firebase' &&
+    driver !== 'resend'
+  ) {
+    throw new Error(
+      'INVITATION_EMAIL_DRIVER must be development, firebase, or resend; production must configure firebase or resend explicitly.',
+    );
+  }
+  if (nodeEnvironment === 'production' && driver === 'development') {
+    throw new Error(
+      'INVITATION_EMAIL_DRIVER must be firebase or resend when NODE_ENV is production.',
+    );
+  }
+  return driver;
 }
 
 function avatarStorageDriverValue(value: unknown): AvatarStorageDriver {

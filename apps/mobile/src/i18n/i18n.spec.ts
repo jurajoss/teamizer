@@ -35,6 +35,37 @@ describe('mobile localization', () => {
     );
   });
 
+  it('localizes invitation delivery and identity conflicts without provider terminology', () => {
+    const english = i18n.getFixedT('en');
+    const czech = i18n.getFixedT('cs');
+    expect(
+      localizedErrorMessage(
+        new ApiClientError(
+          503,
+          'INVITATION_DELIVERY_FAILED',
+          'private provider detail',
+        ),
+        english,
+      ),
+    ).toContain('safe to try again');
+    expect(
+      localizedErrorMessage(
+        new ApiClientError(
+          409,
+          'INVITATION_IDENTITY_ALREADY_LINKED',
+          'private provider detail',
+        ),
+        czech,
+      ),
+    ).toContain('jiným hráčem');
+    expect(resources.en.translation.adminPlayer.inviteAsUser).not.toContain(
+      'Firebase',
+    );
+    expect(resources.cs.translation.adminPlayer.inviteAsUser).not.toContain(
+      'Firebase',
+    );
+  });
+
   it('formats Prague Match dates with the selected locale', () => {
     const value = '2026-09-08T16:00:00.000Z';
     expect(formatMatchDate(value, 'en')).not.toBe(formatMatchDate(value, 'cs'));

@@ -4,7 +4,7 @@ import { StyleSheet, TextInput, View } from 'react-native';
 import type { StyleProp, ViewStyle } from 'react-native';
 
 import { AppText } from './app-text';
-import { layout, radii, spacing, typography } from './theme';
+import { borderWidths, radii, sizes, spacing, typography } from './theme';
 import { useTheme } from './theme-provider';
 
 export function TextField({
@@ -50,6 +50,7 @@ export function TextField({
             borderColor: colors.borderStrong,
             color: colors.textPrimary,
           },
+          focused && styles.focused,
           focused && { borderColor: colors.focus },
           Boolean(error) && { borderColor: colors.danger },
           style,
@@ -68,14 +69,14 @@ const styles = StyleSheet.create({
   container: { gap: spacing.xs },
   input: {
     borderRadius: radii.md,
-    borderWidth: 1,
-    minHeight: layout.minimumTouchTarget + 4,
+    borderWidth: borderWidths.subtle,
+    minHeight: sizes.controlHeight,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     ...typography.body,
   },
   focused: {
-    borderWidth: 2,
+    borderWidth: borderWidths.emphasized,
     paddingHorizontal: spacing.md - 1,
     paddingVertical: spacing.sm - 1,
   },

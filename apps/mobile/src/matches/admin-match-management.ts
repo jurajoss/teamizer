@@ -133,7 +133,3 @@ export function reminderDraftToMinutes(draft: ReminderDraft): number | null {
     ? minutes
     : null;
 }
-
-export function reminderUnitLabel(unit: ReminderUnit): string {
-  return unit === 'DAYS' ? 'days' : unit === 'HOURS' ? 'hours' : 'minutes';
-}

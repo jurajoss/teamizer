@@ -149,17 +149,6 @@ export function validateProposal(
   return { valid: true };
 }
 
-export function reconcileProposal(
-  proposal: TransientTeamProposal | null,
-  match: MatchDetail,
-): TransientTeamProposal | null {
-  if (!proposal) {
-    return null;
-  }
-
-  return validateProposal(match, proposal).valid ? proposal : null;
-}
-
 export function isStaleProposalConflict(error: {
   status: number;
   code: string;
@@ -267,10 +256,6 @@ export function canShowAdminMatchControls(
   matchStatus: MatchDetail['status'],
 ): boolean {
   return role === 'ADMIN' && matchStatus === 'OPEN_FOR_REGISTRATION';
-}
-
-export function isMatchReadOnly(status: MatchDetail['status']): boolean {
-  return status !== 'OPEN_FOR_REGISTRATION';
 }
 
 function canonicalPartitionKey(teamA: string[], teamB: string[]): string {

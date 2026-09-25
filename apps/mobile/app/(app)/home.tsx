@@ -79,7 +79,7 @@ export default function AuthenticatedHomeScreen() {
         <Button
           fullWidth={false}
           label={t('home.viewRanking')}
-          onPress={() => router.push(statisticsRoute())}
+          onPress={() => router.dismissTo(statisticsRoute())}
           variant="secondary"
         />
       </Surface>

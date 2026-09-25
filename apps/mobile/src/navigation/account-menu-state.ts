@@ -1,5 +1,7 @@
 export type AccountMenuState = 'closed' | 'open';
 export type AccountMenuEvent = 'CLOSE' | 'OPEN';
+export type AccountMenuItemKey =
+  'profile' | 'settings' | 'administration' | 'logout';
 
 export function accountMenuVisibility(
   _state: AccountMenuState,
@@ -8,8 +10,10 @@ export function accountMenuVisibility(
   return event === 'OPEN' ? 'open' : 'closed';
 }
 
-export function accountMenuActionsForRole(role: 'PLAYER' | 'ADMIN') {
+export function accountMenuItemKeysForRole(
+  role: 'PLAYER' | 'ADMIN',
+): AccountMenuItemKey[] {
   return role === 'ADMIN'
-    ? (['profile', 'settings', 'administration', 'signOut'] as const)
-    : (['profile', 'settings', 'signOut'] as const);
+    ? ['profile', 'settings', 'administration', 'logout']
+    : ['profile', 'settings', 'logout'];
 }

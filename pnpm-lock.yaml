@@ -165,6 +165,9 @@ importers:
       expo-status-bar:
         specifier: ~57.0.1
         version: 57.0.1(expo@57.0.20)(react-native@0.86.3)(react@19.2.3)
+      expo-symbols:
+        specifier: ~57.0.2
+        version: 57.0.2(expo-font@57.0.3)(expo@57.0.20)(react-native@0.86.3)(react@19.2.3)
       firebase:
         specifier: ^12.18.0
         version: 12.18.0(@react-native-async-storage/async-storage@2.2.0)

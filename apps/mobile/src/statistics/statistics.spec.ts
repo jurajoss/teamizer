@@ -6,7 +6,6 @@ import {
   formatWinRate,
   historyRows,
   playerRouteFor,
-  playerTypeLabel,
   rankingRows,
   statisticsRoute,
   statisticsViewState,
@@ -57,10 +56,5 @@ describe('statistics presentation', () => {
   it('builds the ranking and Player-detail navigation destinations', () => {
     expect(statisticsRoute()).toBe('/statistics');
     expect(playerRouteFor('player-id')).toBe('/players/player-id');
-  });
-
-  it('gives guest Players an explicit identity label', () => {
-    expect(playerTypeLabel('GUEST')).toBe('Guest');
-    expect(playerTypeLabel('REGULAR')).toBeNull();
   });
 });

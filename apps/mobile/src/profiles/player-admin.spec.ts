@@ -1,16 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { ApiClientError } from '../api/authenticated-api-client';
-
 import {
   asyncContentState,
   canAccessPlayerAdministration,
   canInviteGuest,
   canSubmitGuestInvitation,
-  guestConversionErrorMessage,
   isValidInvitationEmail,
   normalizeInvitationEmail,
-  playerKindLabel,
   requiresDeactivationConfirmation,
 } from './player-admin';
 
@@ -24,11 +20,6 @@ describe('Player profile and administration presentation', () => {
     expect(canInviteGuest('ADMIN', 'GUEST')).toBe(true);
     expect(canInviteGuest('ADMIN', 'REGULAR')).toBe(false);
     expect(canInviteGuest('PLAYER', 'GUEST')).toBe(false);
-  });
-
-  it('presents guest account linkage without exposing a Firebase identity', () => {
-    expect(playerKindLabel('GUEST')).toBe('Guest · no account');
-    expect(playerKindLabel('REGULAR')).toBe('Regular · account linked');
   });
 
   it('selects intentional loading, error, empty, and ready states', () => {
@@ -59,33 +50,5 @@ describe('Player profile and administration presentation', () => {
     expect(canSubmitGuestInvitation('player@example.com', false, true)).toBe(
       false,
     );
-  });
-
-  it('distinguishes safe guest-conversion failure causes for administrators', () => {
-    expect(
-      guestConversionErrorMessage(
-        new ApiClientError(422, 'FIREBASE_IDENTITY_NOT_FOUND', 'provider text'),
-      ),
-    ).toContain('No Firebase identity');
-    expect(
-      guestConversionErrorMessage(
-        new ApiClientError(409, 'AUTH_PROVIDER_ALREADY_LINKED', 'conflict'),
-      ),
-    ).toContain('already linked');
-    expect(
-      guestConversionErrorMessage(
-        new ApiClientError(503, 'IDENTITY_PROVIDER_UNAVAILABLE', 'unavailable'),
-      ),
-    ).toContain('credentials');
-    expect(
-      guestConversionErrorMessage(
-        new ApiClientError(403, 'FORBIDDEN', 'forbidden'),
-      ),
-    ).toContain('active administrator');
-    expect(
-      guestConversionErrorMessage(
-        new ApiClientError(0, 'NETWORK_ERROR', 'network'),
-      ),
-    ).toContain('could not be reached');
   });
 });

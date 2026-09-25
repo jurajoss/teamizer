@@ -6,13 +6,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import {
-  Modal,
-  Pressable,
-  StyleSheet,
-  useWindowDimensions,
-  View,
-} from 'react-native';
+import { Modal, Pressable, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -21,15 +15,22 @@ import {
   Avatar,
   Button,
   FeedbackBanner,
-  layout,
   radii,
+  sizes,
   spacing,
   StatusPill,
+  useResponsiveLayout,
   useTheme,
 } from '@teamizer/ui';
 
 import { useSession } from '../session/session-context';
-import { accountMenuVisibility } from './account-menu-state';
+import { AppIcon } from '../ui/icons/app-icon';
+import type { TeamizerIconName } from '../ui/icons/app-icon-map';
+import {
+  accountMenuItemKeysForRole,
+  accountMenuVisibility,
+  type AccountMenuItemKey,
+} from './account-menu-state';
 
 const AccountMenuContext = createContext<(() => void) | null>(null);
 
@@ -37,7 +38,7 @@ export function AccountMenuProvider({ children }: { children: ReactNode }) {
   const { state, signOut } = useSession();
   const { colors } = useTheme();
   const { t } = useTranslation();
-  const { width } = useWindowDimensions();
+  const { isTablet } = useResponsiveLayout();
   const insets = useSafeAreaInsets();
   const [menuState, dispatchMenu] = useReducer(accountMenuVisibility, 'closed');
   const [signingOut, setSigningOut] = useState(false);
@@ -62,6 +63,10 @@ export function AccountMenuProvider({ children }: { children: ReactNode }) {
       setSigningOut(false);
     }
   };
+  const menuItems = accountMenuItemKeysForRole(state.currentUser.user.role);
+  const routeItems = menuItems.filter(
+    (key): key is AccountMenuRouteKey => key !== 'logout',
+  );
 
   return (
     <AccountMenuContext.Provider value={() => dispatchMenu('OPEN')}>
@@ -87,7 +92,7 @@ export function AccountMenuProvider({ children }: { children: ReactNode }) {
               {
                 backgroundColor: colors.surface,
                 borderColor: colors.border,
-                marginBottom: width >= 700 ? spacing.xxl : 0,
+                marginBottom: isTablet ? spacing.xxl : 0,
                 paddingBottom: spacing.xl + insets.bottom,
               },
             ]}
@@ -141,33 +146,43 @@ export function AccountMenuProvider({ children }: { children: ReactNode }) {
             </View>
 
             <View style={styles.actions}>
-              <Button
-                label={t('account.profile')}
-                onPress={() => navigate('/profile')}
-                variant="secondary"
-              />
-              <Button
-                label={t('account.settings')}
-                onPress={() => navigate('/settings' as Href)}
-                variant="secondary"
-              />
-              {state.currentUser.user.role === 'ADMIN' ? (
-                <Button
-                  label={t('account.administration')}
-                  onPress={() => navigate('/admin' as Href)}
-                  variant="secondary"
-                />
-              ) : null}
+              {routeItems.map((key) => {
+                const item = accountMenuRoutes[key];
+                return (
+                  <Button
+                    icon={
+                      <AppIcon
+                        color={colors.accent}
+                        name={item.icon}
+                        size={sizes.icon.medium}
+                      />
+                    }
+                    key={key}
+                    label={t(item.labelKey)}
+                    onPress={() => navigate(item.href as Href)}
+                    variant="secondary"
+                  />
+                );
+              })}
             </View>
 
             {error ? <FeedbackBanner tone="error" message={error} /> : null}
             <View style={[styles.signOut, { borderTopColor: colors.border }]}>
-              <Button
-                busy={signingOut}
-                label={t('account.signOut')}
-                onPress={() => void submitSignOut()}
-                variant="danger"
-              />
+              {menuItems.includes('logout') ? (
+                <Button
+                  busy={signingOut}
+                  icon={
+                    <AppIcon
+                      color={colors.danger}
+                      name="logout"
+                      size={sizes.icon.medium}
+                    />
+                  }
+                  label={t('account.signOut')}
+                  onPress={() => void submitSignOut()}
+                  variant="destructive"
+                />
+              ) : null}
             </View>
           </View>
         </View>
@@ -175,6 +190,33 @@ export function AccountMenuProvider({ children }: { children: ReactNode }) {
     </AccountMenuContext.Provider>
   );
 }
+
+type AccountMenuRouteKey = Exclude<AccountMenuItemKey, 'logout'>;
+
+const accountMenuRoutes: Record<
+  AccountMenuRouteKey,
+  {
+    href: '/profile' | '/settings' | '/admin';
+    icon: TeamizerIconName;
+    labelKey: 'account.profile' | 'account.settings' | 'account.administration';
+  }
+> = {
+  profile: {
+    href: '/profile',
+    icon: 'account',
+    labelKey: 'account.profile',
+  },
+  settings: {
+    href: '/settings',
+    icon: 'settings',
+    labelKey: 'account.settings',
+  },
+  administration: {
+    href: '/admin',
+    icon: 'administration',
+    labelKey: 'account.administration',
+  },
+};
 
 export function AccountAvatarButton() {
   const open = useContext(AccountMenuContext);
@@ -239,8 +281,8 @@ const styles = StyleSheet.create({
   avatarButton: {
     alignItems: 'center',
     borderRadius: radii.pill,
-    height: layout.minimumTouchTarget,
+    height: sizes.minimumTouchTarget,
     justifyContent: 'center',
-    width: layout.minimumTouchTarget,
+    width: sizes.minimumTouchTarget,
   },
 });

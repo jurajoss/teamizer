@@ -1,9 +1,14 @@
 import type { ComponentProps, ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { radii, spacing } from './theme';
+import { borderWidths, radii, spacing } from './theme';
 import { useTheme } from './theme-provider';
 
+/**
+ * @deprecated Compatibility for screens that have not yet migrated. New
+ * presentation should use plain layout with Divider, or Card for a genuinely
+ * bounded content object. Delete Surface as the final old screen migrates.
+ */
 export function Surface({
   children,
   tone = 'default',
@@ -42,7 +47,7 @@ export function Surface({
 const styles = StyleSheet.create({
   base: {
     borderRadius: radii.lg,
-    borderWidth: 1,
+    borderWidth: borderWidths.subtle,
   },
 });
 

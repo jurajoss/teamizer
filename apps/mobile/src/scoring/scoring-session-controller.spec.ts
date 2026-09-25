@@ -6,6 +6,7 @@ import type { CompletionCrypto } from './completion-crypto';
 import type { LocalMatchDraftV1 } from './local-match-draft';
 import {
   ScoringSessionController,
+  scoringSessionIdentity,
   shouldInitializeScoringSession,
   type MatchCompletionGateway,
 } from './scoring-session-controller';
@@ -19,11 +20,13 @@ class MemoryDraftRepository implements ScoringDraftRepository {
   readonly rows = new Map<string, LocalMatchDraftV1>();
   readonly saves: LocalMatchDraftV1[] = [];
   readonly deletes: string[] = [];
+  readonly loads: string[] = [];
   nextLoad: DraftLoadResult | null = null;
   failNextSave = false;
   beforeSave: (() => Promise<void>) | null = null;
 
   async load(userId: string, matchId: string): Promise<DraftLoadResult> {
+    this.loads.push(this.key(userId, matchId));
     if (this.nextLoad) {
       const result = this.nextLoad;
       this.nextLoad = null;
@@ -150,6 +153,44 @@ describe('ScoringSessionController', () => {
     expect(controller.currentState.status).toBe('SCORING');
   });
 
+  it('checks one unchanged scoring session only once across rerenders', async () => {
+    const { controller, repository } = createController();
+    const match = inProgressMatch();
+
+    expect(scoringSessionIdentity(ids.userA, match)).toBe(
+      scoringSessionIdentity(ids.userA, structuredClone(match)),
+    );
+    await controller.initialize(ids.userA, match);
+    await controller.initialize(ids.userA, structuredClone(match));
+    await controller.initialize(ids.userA, structuredClone(match));
+
+    expect(repository.loads).toEqual([`${ids.userA}:${ids.match}`]);
+  });
+
+  it('checks a changed or newly entered scoring session independently', async () => {
+    const sharedRepository = new MemoryDraftRepository();
+    const firstController = createController(sharedRepository).controller;
+
+    await firstController.initialize(ids.userA, inProgressMatch());
+    await firstController.initialize(
+      ids.userA,
+      inProgressMatch({ stateVersion: 2 }),
+    );
+
+    const newlyEnteredController =
+      createController(sharedRepository).controller;
+    await newlyEnteredController.initialize(
+      ids.userA,
+      inProgressMatch({ stateVersion: 2 }),
+    );
+
+    expect(sharedRepository.loads).toEqual([
+      `${ids.userA}:${ids.match}`,
+      `${ids.userA}:${ids.match}`,
+      `${ids.userA}:${ids.match}`,
+    ]);
+  });
+
   it('serializes rapid taps so no committed increment is overwritten', async () => {
     const { controller, repository } = createController();
     await start(controller);
@@ -200,6 +241,7 @@ describe('ScoringSessionController', () => {
 
     expect(restarted.currentState).toMatchObject({
       status: 'SCORING',
+      notice: { code: 'DRAFT_RESTORED' },
       draft: {
         score: { teamA: 0, teamB: 2 },
         playerGoals: { [ids.playerC]: 2 },
@@ -262,7 +304,10 @@ describe('ScoringSessionController', () => {
         playerGoals: [{ playerId: ids.playerA, goals: 1 }],
       },
     });
-    expect(setup.controller.currentState.status).toBe('FINISHED');
+    expect(setup.controller.currentState).toMatchObject({
+      status: 'FINISHED',
+      outcome: 'SAVED',
+    });
   });
 
   it('preserves and reuses the exact key and body after a network failure', async () => {
@@ -280,6 +325,7 @@ describe('ScoringSessionController', () => {
     await setup.controller.finish();
     expect(setup.controller.currentState).toMatchObject({
       status: 'SCORING',
+      notice: { code: 'COMPLETION_UNCONFIRMED' },
       draft: {
         completion: {
           state: 'PENDING',
@@ -306,6 +352,7 @@ describe('ScoringSessionController', () => {
 
     expect(setup.controller.currentState).toMatchObject({
       status: 'SCORING',
+      notice: { code: 'COMPLETION_UNCONFIRMED' },
       draft: {
         score: { teamA: 0, teamB: 0 },
         completion: { state: 'PENDING' },
@@ -326,6 +373,10 @@ describe('ScoringSessionController', () => {
 
     expect(setup.controller.currentState).toMatchObject({
       status: 'SCORING',
+      notice: {
+        code: 'COMPLETION_UNCONFIRMED',
+        detail: 'Invalid result.',
+      },
       draft: {
         completion: {
           state: 'ACTIVE',
@@ -389,6 +440,7 @@ describe('ScoringSessionController', () => {
 
     expect(setup.controller.currentState).toMatchObject({
       status: 'FINISHED',
+      outcome: 'CONFLICTED',
       match: { result: { score: { teamA: 0, teamB: 2 } } },
     });
     expect(setup.repository.rows.has(`${ids.userA}:${ids.match}`)).toBe(false);

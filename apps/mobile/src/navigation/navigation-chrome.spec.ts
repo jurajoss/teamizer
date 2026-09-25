@@ -1,43 +1,44 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  accountMenuActionsForRole,
+  accountMenuItemKeysForRole,
   accountMenuVisibility,
 } from './account-menu-state';
 import {
+  authenticatedHeaderKind,
   authenticatedHeaderPolicy,
   authenticatedHeaderTitleAlignment,
+  nestedBackFallback,
 } from './header-policy';
 
 describe('authenticated navigation chrome', () => {
-  it('uses a branded, account-enabled Home header without Back', () => {
-    expect(authenticatedHeaderPolicy('home')).toEqual({
+  it('uses an account-enabled titled header without Back on every primary root', () => {
+    expect(authenticatedHeaderPolicy('primary')).toEqual({
       showAccount: true,
       showBack: false,
-      showBrand: true,
-      showBreadcrumb: false,
-      showSignOut: false,
-      showTitle: false,
+      showTitle: true,
+      titleAlignment: 'center',
     });
+    expect(authenticatedHeaderKind('/home')).toBe('primary');
+    expect(authenticatedHeaderKind('/matches')).toBe('primary');
+    expect(authenticatedHeaderKind('/players')).toBe('primary');
+    expect(authenticatedHeaderKind('/statistics')).toBe('primary');
   });
 
-  it('uses Back, a concise title slot, and account access on inner screens', () => {
-    expect(authenticatedHeaderPolicy('inner')).toEqual({
+  it('uses Back, a centered title, and account access on nested screens', () => {
+    expect(authenticatedHeaderPolicy('nested')).toEqual({
       showAccount: true,
       showBack: true,
-      showBrand: false,
-      showBreadcrumb: false,
-      showSignOut: false,
       showTitle: true,
+      titleAlignment: 'center',
     });
+    expect(authenticatedHeaderKind('/matches/match-id')).toBe('nested');
+    expect(authenticatedHeaderKind('/profile')).toBe('nested');
   });
 
-  it('centers inner titles in the screen-level native title slot', () => {
-    expect(authenticatedHeaderTitleAlignment('inner')).toBe('center');
-  });
-
-  it('keeps Home branding in the leading slot', () => {
-    expect(authenticatedHeaderTitleAlignment('home')).toBe('left');
+  it('uses the native geometrically centered title slot for roots and nested routes', () => {
+    expect(authenticatedHeaderTitleAlignment('primary')).toBe('center');
+    expect(authenticatedHeaderTitleAlignment('nested')).toBe('center');
   });
 
   it('opens and closes the account menu deterministically', () => {
@@ -45,8 +46,27 @@ describe('authenticated navigation chrome', () => {
     expect(accountMenuVisibility('open', 'CLOSE')).toBe('closed');
   });
 
-  it('shows Administration only to admins', () => {
-    expect(accountMenuActionsForRole('PLAYER')).not.toContain('administration');
-    expect(accountMenuActionsForRole('ADMIN')).toContain('administration');
+  it('keeps account destinations role-aware and Logout secondary', () => {
+    expect(accountMenuItemKeysForRole('PLAYER')).toEqual([
+      'profile',
+      'settings',
+      'logout',
+    ]);
+    expect(accountMenuItemKeysForRole('ADMIN')).toEqual([
+      'profile',
+      'settings',
+      'administration',
+      'logout',
+    ]);
+  });
+
+  it('provides canonical Back fallbacks for direct nested entry', () => {
+    expect(nestedBackFallback('/matches/match-id')).toBe('/matches');
+    expect(nestedBackFallback('/players/player-id')).toBe('/players');
+    expect(nestedBackFallback('/admin/matches/create')).toBe('/admin/matches');
+    expect(nestedBackFallback('/admin/players/player-id')).toBe(
+      '/admin/players',
+    );
+    expect(nestedBackFallback('/profile')).toBe('/home');
   });
 });

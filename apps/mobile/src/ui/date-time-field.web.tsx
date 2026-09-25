@@ -2,7 +2,14 @@ import type { ChangeEvent, CSSProperties } from 'react';
 import { createElement } from 'react';
 import { View } from 'react-native';
 
-import { AppText, radii, spacing, typography, useTheme } from '@teamizer/ui';
+import {
+  AppText,
+  radii,
+  sizes,
+  spacing,
+  typography,
+  useTheme,
+} from '@teamizer/ui';
 
 import {
   parseDateTimeInput,
@@ -69,7 +76,7 @@ const inputStyle: CSSProperties = {
   boxSizing: 'border-box',
   fontSize: typography.body.fontSize,
   lineHeight: `${typography.body.lineHeight}px`,
-  minHeight: 52,
+  minHeight: sizes.controlHeight,
   padding: `${spacing.sm}px ${spacing.md}px`,
   width: '100%',
 };

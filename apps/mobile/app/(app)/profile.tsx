@@ -1,5 +1,3 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
@@ -17,15 +15,11 @@ import {
 } from '@teamizer/ui';
 
 import type { PlayerDetail } from '../../src/api/contracts';
-import { localizedErrorMessage } from '../../src/i18n/localized-error';
-import { profileQueryKeys } from '../../src/profiles/profile-query-keys';
 import { AvatarManager } from '../../src/profiles/avatar-manager';
-import type { PreparedAvatar } from '../../src/profiles/avatar-picker';
-import { asyncContentState } from '../../src/profiles/player-admin';
+import { useProfileController } from '../../src/profiles/use-profile-controller';
 import { usePreferences } from '../../src/preferences/preferences-context';
 import { useAppServices } from '../../src/providers/app-services-context';
 import { useSession } from '../../src/session/session-context';
-import { statisticsQueryKeys } from '../../src/statistics/statistics-query-keys';
 import {
   formatGoalsPerMatch,
   formatWinRate,
@@ -37,63 +31,18 @@ export default function ProfileRoute() {
   const { t } = useTranslation();
   const { state, refreshCurrentUser } = useSession();
   const { apiClient } = useAppServices();
-  const queryClient = useQueryClient();
   const playerId =
     state.status === 'AUTHENTICATED' ? state.currentUser.player.id : null;
-  const profileQuery = useQuery({
-    queryKey: profileQueryKeys.current(playerId ?? 'invalid'),
-    queryFn: () => apiClient.getPlayerDetail(playerId ?? ''),
-    enabled: playerId !== null,
+  const profile = useProfileController({
+    apiClient,
+    playerId,
+    refreshCurrentUser,
   });
-  const [nameOverride, setNameOverride] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
-  const name = nameOverride ?? profileQuery.data?.name ?? '';
-
-  const publish = async (player: PlayerDetail) => {
-    queryClient.setQueryData(profileQueryKeys.current(player.id), player);
-    queryClient.setQueryData(statisticsQueryKeys.player(player.id), player);
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: statisticsQueryKeys.root }),
-      queryClient.invalidateQueries({ queryKey: profileQueryKeys.root }),
-      refreshCurrentUser(),
-    ]);
-  };
-  const nameMutation = useMutation({
-    mutationFn: () => apiClient.updateOwnPlayer(playerId ?? '', { name }),
-    onSuccess: async (player) => {
-      setMessage(t('profile.updatedName'));
-      await publish(player);
-      setNameOverride(null);
-    },
-  });
-  const avatarMutation = useMutation({
-    mutationFn: (file: PreparedAvatar) =>
-      apiClient.uploadOwnPlayerAvatar(playerId ?? '', file),
-    onSuccess: async (player) => {
-      setMessage(t('profile.updatedPhoto'));
-      await publish(player);
-    },
-  });
-  const removeAvatarMutation = useMutation({
-    mutationFn: async () => {
-      await apiClient.deletePlayerAvatar(playerId ?? '');
-      return apiClient.getPlayerDetail(playerId ?? '');
-    },
-    onSuccess: async (player) => {
-      setMessage(t('profile.removedPhoto'));
-      await publish(player);
-    },
-  });
-  const mutationError = nameMutation.error ?? removeAvatarMutation.error;
 
   if (state.status !== 'AUTHENTICATED') {
     return <FoundationScreen busy message={t('home.checking')} />;
   }
-  const contentState = asyncContentState(
-    profileQuery.isPending,
-    profileQuery.isError,
-    profileQuery.data ? 1 : 0,
-  );
+  const { contentState, profileQuery } = profile;
 
   return (
     <AppScreen scroll underHeader contentStyle={styles.screen}>
@@ -126,16 +75,11 @@ export default function ProfileRoute() {
       {contentState === 'READY' && profileQuery.data ? (
         <>
           <ProfileHeading player={profileQuery.data} />
-          {message ? <FeedbackBanner tone="success" message={message} /> : null}
-          {mutationError ? (
-            <FeedbackBanner
-              tone="error"
-              message={localizedErrorMessage(
-                mutationError,
-                t,
-                'profile.saveFailed',
-              )}
-            />
+          {profile.message ? (
+            <FeedbackBanner tone="success" message={profile.message} />
+          ) : null}
+          {profile.errorMessage ? (
+            <FeedbackBanner tone="error" message={profile.errorMessage} />
           ) : null}
           <Surface style={styles.formCard}>
             <View style={styles.sectionHeading}>
@@ -147,29 +91,32 @@ export default function ProfileRoute() {
             </View>
             <TextField
               autoCapitalize="words"
-              editable={!nameMutation.isPending}
+              editable={!profile.namePending}
               label={t('profile.playerName')}
               maxLength={120}
-              onChangeText={setNameOverride}
-              value={name}
+              onChangeText={profile.setName}
+              value={profile.name}
             />
             <Button
-              busy={nameMutation.isPending}
-              disabled={!name.trim() || name.trim() === profileQuery.data.name}
+              busy={profile.namePending}
+              disabled={
+                !profile.name.trim() ||
+                profile.name.trim() === profileQuery.data.name
+              }
               label={t('profile.saveName')}
-              onPress={() => nameMutation.mutate()}
+              onPress={profile.saveName}
             />
           </Surface>
           <Surface style={styles.formCard}>
             <AvatarManager
-              busy={avatarMutation.isPending || removeAvatarMutation.isPending}
+              busy={profile.avatarPending}
               name={profileQuery.data.name}
               url={profileQuery.data.avatarUrl}
               onRemove={async () => {
-                await removeAvatarMutation.mutateAsync();
+                await profile.removeAvatar();
               }}
               onUpload={async (file) => {
-                await avatarMutation.mutateAsync(file);
+                await profile.uploadAvatar(file);
               }}
             />
           </Surface>

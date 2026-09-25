@@ -1,7 +1,8 @@
 import { StyleSheet, View } from 'react-native';
 
 import { AppText } from './app-text';
-import { radii, spacing } from './theme';
+import { statusColorSet } from './status-colors';
+import { borderWidths, radii, spacing } from './theme';
 import { useTheme } from './theme-provider';
 
 export type FeedbackTone = 'error' | 'success' | 'info' | 'warning';
@@ -16,34 +17,32 @@ export function FeedbackBanner({
   message: string;
 }) {
   const { colors } = useTheme();
-  const toneColor = {
-    error: colors.danger,
-    success: colors.success,
-    info: colors.info,
-    warning: colors.warning,
-  }[tone];
-  const surfaceColor = {
-    error: colors.dangerSurface,
-    success: colors.successSurface,
-    info: colors.infoSurface,
-    warning: colors.warningSurface,
-  }[tone];
+  const toneColors = statusColorSet(colors, tone === 'error' ? 'danger' : tone);
 
   return (
     <View
       accessibilityLiveRegion={tone === 'error' ? 'assertive' : 'polite'}
       accessibilityRole={tone === 'error' ? 'alert' : 'text'}
-      style={[styles.container, { backgroundColor: surfaceColor }]}
+      style={[
+        styles.container,
+        {
+          backgroundColor: toneColors.background,
+          borderColor: toneColors.border,
+        },
+      ]}
     >
       <View
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"
         style={[
           styles.symbol,
-          { backgroundColor: colors.surface, borderColor: toneColor },
+          {
+            backgroundColor: colors.surface,
+            borderColor: toneColors.foreground,
+          },
         ]}
       >
-        <AppText variant="label" style={{ color: toneColor }}>
+        <AppText variant="label" style={{ color: toneColors.foreground }}>
           {tone === 'error' ? '!' : tone === 'success' ? '✓' : 'i'}
         </AppText>
       </View>
@@ -61,6 +60,7 @@ const styles = StyleSheet.create({
   container: {
     alignItems: 'flex-start',
     borderRadius: radii.md,
+    borderWidth: borderWidths.subtle,
     flexDirection: 'row',
     gap: spacing.sm,
     padding: spacing.md,
@@ -68,7 +68,7 @@ const styles = StyleSheet.create({
   symbol: {
     alignItems: 'center',
     borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: radii.pill,
     height: 24,
     justifyContent: 'center',
     width: 24,

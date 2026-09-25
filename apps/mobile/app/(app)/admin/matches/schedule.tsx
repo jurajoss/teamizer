@@ -1,6 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Redirect, router } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, Switch, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
@@ -15,189 +13,46 @@ import {
   useTheme,
 } from '@teamizer/ui';
 
-import { ApiClientError } from '../../../../src/api/authenticated-api-client';
-import { localizedErrorMessage } from '../../../../src/i18n/localized-error';
-import type {
-  Schedule,
-  UpdateScheduleInput,
-  Weekday,
-} from '../../../../src/api/contracts';
 import {
   canAccessMatchAdministration,
-  formatLocalTimeForApi,
-  MATCH_TIME_ZONE,
-  parseLocalTime,
-  reminderDraftFromMinutes,
-  reminderDraftToMinutes,
-  runSingleSubmission,
   weekdays,
   type ReminderDraft,
   type ReminderUnit,
 } from '../../../../src/matches/admin-match-management';
-import {
-  adminMatchQueryKeys,
-  refreshUpcomingMatchesAfterCreation,
-} from '../../../../src/matches/admin-match-query-keys';
 import { matchRouteFor } from '../../../../src/matches/match-flow';
+import { useAdminScheduleController } from '../../../../src/matches/use-admin-schedule-controller';
 import { useAppServices } from '../../../../src/providers/app-services-context';
 import { useSession } from '../../../../src/session/session-context';
 import { AppScreen } from '../../../../src/ui/app-screen';
 import { DateTimeField } from '../../../../src/ui/date-time-field';
-
-type ScheduleDraft = {
-  enabled: boolean;
-  weekday: Weekday;
-  localStartTime: Date | null;
-  timeZone: string;
-  sportId: string;
-  location: string;
-  generationHorizonDays: string;
-  registrationReminder: ReminderDraft;
-  finalReminder: ReminderDraft;
-};
-
-type ScheduleValidation = Partial<
-  Record<
-    | 'localStartTime'
-    | 'timeZone'
-    | 'sportId'
-    | 'location'
-    | 'generationHorizonDays'
-    | 'registrationReminder'
-    | 'finalReminder',
-    string
-  >
->;
-
-const initialDraft: ScheduleDraft = {
-  enabled: true,
-  weekday: 'TUESDAY',
-  localStartTime: null,
-  timeZone: MATCH_TIME_ZONE,
-  sportId: '',
-  location: '',
-  generationHorizonDays: '7',
-  registrationReminder: { value: '2', unit: 'DAYS' },
-  finalReminder: { value: '3', unit: 'HOURS' },
-};
 
 export default function RecurringScheduleRoute() {
   const { t } = useTranslation();
   const { colors } = useTheme();
   const { state } = useSession();
   const { apiClient } = useAppServices();
-  const queryClient = useQueryClient();
-  const initialized = useRef(false);
-  const saveGate = useRef(false);
-  const [draft, setDraft] = useState(initialDraft);
-  const [validation, setValidation] = useState<ScheduleValidation>({});
-  const [feedback, setFeedback] = useState<{
-    tone: 'success' | 'error';
-    message: string;
-  } | null>(null);
   const authorized =
     state.status === 'AUTHENTICATED' &&
     canAccessMatchAdministration(state.currentUser.user.role);
-  const sportsQuery = useQuery({
-    queryKey: adminMatchQueryKeys.sports,
-    queryFn: () => apiClient.getAdminSports(),
-    enabled: authorized,
+  const schedule = useAdminScheduleController({
+    apiClient,
+    authorized,
+    onGenerated: (matchId) => router.push(matchRouteFor(matchId)),
   });
-  const scheduleQuery = useQuery({
-    queryKey: adminMatchQueryKeys.schedule,
-    queryFn: async () => {
-      try {
-        return await apiClient.getAdminSchedule();
-      } catch (error) {
-        if (error instanceof ApiClientError && error.status === 404)
-          return null;
-        throw error;
-      }
-    },
-    enabled: authorized,
-  });
-  const updateMutation = useMutation({
-    mutationFn: (input: UpdateScheduleInput) =>
-      apiClient.updateAdminSchedule(input),
-  });
-  const generateMutation = useMutation({
-    mutationFn: () => apiClient.generateScheduledMatch(),
-  });
-
-  useEffect(() => {
-    if (
-      initialized.current ||
-      scheduleQuery.isPending ||
-      sportsQuery.isPending
-    ) {
-      return;
-    }
-    initialized.current = true;
-    setDraft(
-      scheduleQuery.data
-        ? draftFromSchedule(scheduleQuery.data)
-        : {
-            ...initialDraft,
-            sportId: sportsQuery.data?.[0]?.id ?? '',
-          },
-    );
-  }, [
-    scheduleQuery.data,
-    scheduleQuery.isPending,
-    sportsQuery.data,
-    sportsQuery.isPending,
-  ]);
+  const {
+    draft,
+    feedback,
+    generate,
+    loadError,
+    loading,
+    save,
+    scheduleQuery,
+    setDraft,
+    sportsQuery,
+    validation,
+  } = schedule;
 
   if (!authorized) return <Redirect href="/home" />;
-
-  const save = async () => {
-    await runSingleSubmission(saveGate, async () => {
-      const result = validateScheduleDraft(draft, {
-        localStartTime: t('validation.chooseTime'),
-        timeZone: t('validation.enterTimeZone'),
-        sportId: t('validation.chooseSport'),
-        location: t('validation.locationLength'),
-        generationHorizonDays: t('validation.enterHorizon'),
-        registrationReminder: t('validation.reminder'),
-        finalReminder: t('validation.reminder'),
-      });
-      setValidation(result.errors);
-      setFeedback(null);
-      if (!result.input) return;
-
-      try {
-        const schedule = await updateMutation.mutateAsync(result.input);
-        queryClient.setQueryData(adminMatchQueryKeys.schedule, schedule);
-        setDraft(draftFromSchedule(schedule));
-        setFeedback({
-          tone: 'success',
-          message: t('schedule.saved'),
-        });
-      } catch (error) {
-        setFeedback({
-          tone: 'error',
-          message: localizedErrorMessage(error, t, 'schedule.saveFailed'),
-        });
-      }
-    });
-  };
-
-  const generate = async () => {
-    setFeedback(null);
-    try {
-      const result = await generateMutation.mutateAsync();
-      await refreshUpcomingMatchesAfterCreation(queryClient);
-      router.push(matchRouteFor(result.match.id));
-    } catch (error) {
-      setFeedback({
-        tone: 'error',
-        message: localizedErrorMessage(error, t, 'schedule.generateFailed'),
-      });
-    }
-  };
-
-  const loading = scheduleQuery.isPending || sportsQuery.isPending;
-  const loadError = scheduleQuery.isError || sportsQuery.isError;
 
   return (
     <AppScreen scroll underHeader contentStyle={styles.screen}>
@@ -400,13 +255,13 @@ export default function RecurringScheduleRoute() {
             />
           ) : null}
           <Button
-            busy={updateMutation.isPending}
+            busy={schedule.updatePending}
             disabled={!sportsQuery.data?.length}
             label={scheduleQuery.data ? t('common.save') : t('schedule.create')}
             onPress={() => void save()}
           />
           <Button
-            busy={generateMutation.isPending}
+            busy={schedule.generatePending}
             disabled={!scheduleQuery.data || !scheduleQuery.data.enabled}
             label={t('schedule.generate')}
             onPress={() => void generate()}
@@ -463,76 +318,6 @@ function ReminderEditor({
       </View>
     </View>
   );
-}
-
-function draftFromSchedule(schedule: Schedule): ScheduleDraft {
-  return {
-    enabled: schedule.enabled,
-    weekday: schedule.weekday,
-    localStartTime: parseLocalTime(schedule.localStartTime),
-    timeZone: schedule.timeZone,
-    sportId: schedule.sportId,
-    location: schedule.location ?? '',
-    generationHorizonDays: String(schedule.generationHorizonDays),
-    registrationReminder: reminderDraftFromMinutes(
-      schedule.registrationReminderMinutes,
-    ),
-    finalReminder: reminderDraftFromMinutes(schedule.finalReminderMinutes),
-  };
-}
-
-function validateScheduleDraft(
-  draft: ScheduleDraft,
-  messages: ScheduleValidation,
-): {
-  errors: ScheduleValidation;
-  input: UpdateScheduleInput | null;
-} {
-  const errors: ScheduleValidation = {};
-  if (!draft.localStartTime)
-    errors.localStartTime = messages.localStartTime ?? '';
-  if (!draft.timeZone.trim()) errors.timeZone = messages.timeZone ?? '';
-  if (!draft.sportId) errors.sportId = messages.sportId ?? '';
-  if (draft.location.trim().length > 255) {
-    errors.location = messages.location ?? '';
-  }
-  const horizon = Number(draft.generationHorizonDays);
-  if (!/^\d+$/.test(draft.generationHorizonDays) || horizon < 1) {
-    errors.generationHorizonDays = messages.generationHorizonDays ?? '';
-  }
-  const registrationReminderMinutes = reminderDraftToMinutes(
-    draft.registrationReminder,
-  );
-  if (registrationReminderMinutes === null) {
-    errors.registrationReminder = messages.registrationReminder ?? '';
-  }
-  const finalReminderMinutes = reminderDraftToMinutes(draft.finalReminder);
-  if (finalReminderMinutes === null) {
-    errors.finalReminder = messages.finalReminder ?? '';
-  }
-
-  if (
-    Object.keys(errors).length > 0 ||
-    !draft.localStartTime ||
-    registrationReminderMinutes === null ||
-    finalReminderMinutes === null
-  ) {
-    return { errors, input: null };
-  }
-  return {
-    errors,
-    input: {
-      weekday: draft.weekday,
-      localStartTime: formatLocalTimeForApi(draft.localStartTime),
-      timeZone: draft.timeZone.trim(),
-      enabled: draft.enabled,
-      sportId: draft.sportId,
-      location: draft.location.trim() || null,
-      generationHorizonDays: horizon,
-      registrationReminderMinutes,
-      finalReminderMinutes,
-    },
-  };
 }
 
 const styles = StyleSheet.create({

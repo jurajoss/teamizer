@@ -31,6 +31,9 @@ export const resources = {
       },
       nav: {
         home: 'Home',
+        matches: 'Matches',
+        players: 'Players',
+        statistics: 'Statistics',
         match: 'Match',
         ranking: 'Player ranking',
         player: 'Player',
@@ -167,6 +170,22 @@ export const resources = {
         listLabel: 'Player ranking',
         openHint: 'Opens Player statistics and recent Matches',
         loadMore: 'Load more Players',
+      },
+      matchesIndex: {
+        loading: 'Loading Matches…',
+        unavailable: 'Matches unavailable',
+        empty: 'No upcoming Matches',
+        emptyHint: 'There is no open or in-progress Match scheduled right now.',
+        listLabel: 'Upcoming Matches',
+        openHint: 'Opens Match details',
+      },
+      playersIndex: {
+        loading: 'Loading Players…',
+        unavailable: 'Players unavailable',
+        empty: 'No active Players',
+        emptyHint: 'Active Players will appear here.',
+        listLabel: 'Players',
+        openHint: 'Opens Player details',
       },
       profile: {
         loading: 'Loading your profile…',
@@ -414,6 +433,8 @@ export const resources = {
         tapAdd: 'Tap to add +1',
         addGoalHint: 'Adds one goal',
         addGoalLabel: '{{name}}, {{count}} goals, add one',
+        scoringPlayerLabel:
+          'Team {{side}}, {{name}}, {{count}} goals. Add goal.',
         removeGoal: 'Remove one goal from {{name}}',
         unreadableResult:
           'The server marked this Match finished without a readable result.',
@@ -607,6 +628,9 @@ export const resources = {
       },
       nav: {
         home: 'Domů',
+        matches: 'Zápasy',
+        players: 'Hráči',
+        statistics: 'Statistiky',
         match: 'Zápas',
         ranking: 'Pořadí hráčů',
         player: 'Hráč',
@@ -743,6 +767,23 @@ export const resources = {
         listLabel: 'Pořadí hráčů',
         openHint: 'Otevře statistiky hráče a nedávné zápasy',
         loadMore: 'Načíst další hráče',
+      },
+      matchesIndex: {
+        loading: 'Načítám zápasy…',
+        unavailable: 'Zápasy nejsou dostupné',
+        empty: 'Žádné nadcházející zápasy',
+        emptyHint:
+          'Právě není naplánován žádný otevřený ani probíhající zápas.',
+        listLabel: 'Nadcházející zápasy',
+        openHint: 'Otevře detail zápasu',
+      },
+      playersIndex: {
+        loading: 'Načítám hráče…',
+        unavailable: 'Hráči nejsou dostupní',
+        empty: 'Žádní aktivní hráči',
+        emptyHint: 'Aktivní hráči se zobrazí zde.',
+        listLabel: 'Hráči',
+        openHint: 'Otevře detail hráče',
       },
       profile: {
         loading: 'Načítám váš profil…',
@@ -984,6 +1025,8 @@ export const resources = {
         tapAdd: 'Klepnutím přidáte +1',
         addGoalHint: 'Přidá jeden gól',
         addGoalLabel: '{{name}}, {{count}} gólů, přidat jeden',
+        scoringPlayerLabel:
+          'Tým {{side}}, {{name}}, počet gólů: {{count}}. Přidat gól.',
         removeGoal: 'Odebrat jeden gól hráči {{name}}',
         unreadableResult:
           'Server označil zápas za dokončený bez čitelného výsledku.',

@@ -5,8 +5,8 @@
 Teamizer uses a modern, restrained visual language with a practical sports
 character. The interface is friendly and lightweight rather than aggressive or
 decorative. Strong hierarchy, direct language, and comfortable controls take
-priority over dense dashboards, novelty graphics, gradients, or cards nested
-inside cards.
+priority over dense dashboards, novelty graphics, decorative gradients, or
+cards nested inside cards.
 
 The implemented authentication, onboarding, home, Match, team, and scoring
 screens form one visual baseline. New mobile screens must reuse the semantic
@@ -30,17 +30,25 @@ values or branching on dark mode.
 
 | Role | Semantic tokens |
 |---|---|
-| App canvas and hierarchy | `background`, `surface`, `surfaceSubtle`, `surfaceStrong` |
-| Text | `textPrimary`, `textSecondary`, `textSubtle` |
+| App canvas and hierarchy | `background`, `surface`, `surfaceElevated`, `surfaceSubtle`, `surfaceStrong` |
+| Text | `textPrimary`, `textSecondary`, `textSubtle`, `textDisabled` |
 | Brand/action | `accent`, `accentPressed`, `accentSoft`, `accentContrast`, `focus` |
-| Boundaries | `border`, `borderStrong` |
-| Feedback | `danger`, `success`, `warning`, `info` and matching `*Surface` tokens |
-| Team distinction | `teamAText`/`teamASurface`, `teamBText`/`teamBSurface` |
+| Boundaries | `border`, `borderStrong`, `borderDisabled` |
+| Feedback/status | `danger`, `success`, `warning`, `info` with matching `*Surface` and `*Border` tokens |
+| Unavailable controls | `disabledSurface`, `textDisabled`, `borderDisabled` |
+| Team distinction | `teamAText`/`teamASurface`/`teamABorder`, `teamBText`/`teamBSurface`/`teamBBorder` |
 | Modal treatment | `overlay` |
 
 Team colors are reserved for identifying sides in team and scoring contexts.
 They must always be accompanied by the side name or another semantic label;
-color alone never communicates team membership or status.
+color alone never communicates team membership or status. Team A uses the
+turquoise/green family and Team B uses the blue family in both themes.
+`teamSurfaceTints` derives restrained left-to-right surface depth from those
+same semantic families. The shared `TeamTintBackground` renders the tint behind
+content while its parent continues to own the normal surface, border, radius,
+and layout. Its direction is selectable for paired components such as the
+scoreboard, while Player-list tiles retain their common left-originating visual
+language.
 
 ### Typography
 
@@ -54,6 +62,8 @@ shared `AppText` variants are:
 - `label`: form and row labels;
 - `caption`: supporting copy;
 - `eyebrow`: short uppercase context/status labels;
+- `metric`: compact high-emphasis numeric data such as an individual goal count;
+- `scoreCompact`: a live score that must remain prominent in a dense workflow;
 - `score`: instant-read score display.
 
 Body copy remains at 16 px with a 23 px line height. Important text is made
@@ -63,9 +73,12 @@ larger or heavier, not communicated through color alone.
 
 - Spacing uses the shared 4, 8, 12, 16, 20, 24, 32, 40, and 48 scale.
 - Corner radii are 10, 14, and 20, with a pill value only for compact status.
-- Interactive controls have a minimum 48 pt target; primary buttons are 52 pt
-  high.
-- Shadows are quiet and reserved for a genuinely raised primary surface.
+- `sizes` owns the 48 pt minimum touch target, 36 pt compact visual control,
+  52 pt control height, common icon sizes, and the four Avatar dimensions.
+- `borderWidths` distinguishes ordinary and emphasized boundaries.
+- `shadows.raised` is reserved for a genuinely raised object;
+  `shadows.floating` is for temporary floating UI such as a future sidebar
+  overlay or menu.
 - Borders separate rows and fields but do not box every piece of content.
 
 ## Shared primitives
@@ -83,32 +96,84 @@ larger or heavier, not communicated through color alone.
 - `StatusPill` for concise text-and-dot status presentation;
 - `Avatar` for a square-cropped Player image at shared small, medium, large,
   and hero sizes, with deterministic one/two-letter initials fallback;
-- `Surface` for one-level card/list grouping;
+- `Card` only when content is one bounded domain object, such as a Match or
+  Player summary;
+- `Divider` for quiet row/section separation; ordinary sections are plain
+  layout with typography and whitespace;
 - `ThemeProvider`/`useTheme` for active semantic colors;
-- semantic light/dark themes, `typography`, `spacing`, `radii`, `layout`, and
-  `shadows`.
+- `TeamTintBackground` for subtle semantic Team A/Team B surface depth without
+  affecting the parent component's geometry or interaction;
+- semantic light/dark themes, `typography`, `spacing`, `sizes`, `radii`,
+  `borderWidths`, `layout`, and `shadows`.
 
-`AppScreen` owns the app canvas, safe-area insets, phone/tablet page padding,
-scroll behavior, and a 760 px readable maximum width. Screens use these pieces
-directly and add only layout styles specific to their content.
+`AppScreen` owns the app canvas, content safe-area insets, phone/tablet page
+padding, scroll behavior, optional keyboard avoidance, and a content-width intent:
+`readable` (760 px maximum), `working` (1120 px maximum), or `full`. Existing
+screens default to `readable`. The authenticated shell declares the safe-area
+edges already occupied by its bottom navigation or sidebar, preventing doubled
+insets without making feature screens responsive-shell aware. Screens use these
+pieces directly and add only layout styles specific to their content.
+
+`Surface` remains temporarily available only because the current screens use
+its `default`/`muted`/`brand` tones and padding API extensively. Do not add new
+uses. Each screen-migration phase replaces its `Surface` uses with plain
+sections, `Divider`, or `Card`; the phase that migrates the final consumer must
+delete `Surface`.
+
+The current `Button` default remains full-width because active screens rely on
+it. Migrated screens should choose `fullWidth` deliberately; the final screen
+migration must make the remaining intent explicit before deciding whether the
+default can become intrinsic width. No compatibility-only Button variant is
+retained: existing `danger` call sites now use the semantic `destructive`
+variant.
+
+## Responsive composition
+
+`resolveLayoutMode` defines exactly two modes: `phone` below 700 px and
+`tablet` at 700 px or wider. Components consume the same decision through
+`useResponsiveLayout`; they must not introduce local `Dimensions.get()` or raw
+breakpoint checks. `AppScreen` uses that mode for page padding.
+
+Phone and tablet render the same feature content and behavior. Only composition
+changes: a phone normally stacks content, while tablet may place the same
+sections in two columns or choose the wider `working` content width. The
+authenticated navigation shell reserves tablet sidebar space outside
+`AppScreen`; feature screens do not calculate or subtract that width.
+
+## Icons
+
+Teamizer owns its application icon vocabulary through `AppIcon` and the small
+semantic mapping in `apps/mobile/src/ui/icons`. It uses the Expo-provided
+`expo-symbols` runtime: SF Symbols on iOS and centrally mapped Material Symbols
+on Android/web. Feature and navigation code asks for Teamizer names such as
+`matches`, `account`, or `back`; it does not import platform icon names or icon
+families directly. Icons supplement localized labels and never replace the text
+of a primary destination. Extend this mapping only for a concrete product need;
+do not add a second icon package or scatter raw glyphs through new UI.
 
 ## Page and navigation conventions
 
 - Phone is the primary layout. Content uses 20 pt side padding and remains easy
   to operate one-handed.
-- At 700 px and wider, side padding increases to 32 pt while content is capped
-  instead of stretched. Forms remain capped at 460 px.
+- At the shared tablet mode (700 px and wider), side padding increases to 32 pt
+  while content is capped instead of stretched. Forms remain capped at 460 px.
 - Every route is safe-area-aware on all four edges and supports vertical
   scrolling where content or text scaling can exceed the viewport.
-- Authenticated routes use one shared Expo Router stack header. Home places the
-  compact Teamizer mark/wordmark at the leading edge and the current Player
-  avatar at the trailing edge, with no Back action. Inner routes place an
-  accessible Back action at the leading edge, a concise route title, and the
-  same avatar/account trigger at the trailing edge. Platform back gestures and
-  Android system Back remain available.
-- The stack is intentionally shallow: Home leads to Match flows, ranking/Player,
-  Profile, Settings, and ADMIN-only Administration. No bottom-tab system or
-  separate tablet navigation exists.
+- Authenticated routes use one shared Expo Router stack and four canonical
+  primary roots: `/home`, `/matches`, `/players`, and `/statistics`. On phone,
+  the shell renders these as persistent bottom navigation. At the shared 700 px
+  tablet breakpoint, the same destination definitions become a persistent,
+  intentionally composed left sidebar. Routes, screens, authorization, and
+  active-state semantics are shared; there are no phone/tablet route copies.
+- Primary roots have a centered localized title, no Back action, and the
+  current Player avatar at the trailing edge. Nested routes such as
+  `/matches/:matchId` and `/players/:playerId` keep an accessible Back action,
+  a concise native-centered title, and the account trigger. Native stack
+  centering avoids arbitrary padding and preserves Android alignment. Platform
+  gestures and Android system Back remain available.
+- Primary-destination changes use Expo Router pop-to/replace semantics, so they
+  do not build synthetic Back history. Detail screens use normal stack pushes;
+  direct nested entry has a canonical primary-area Back fallback.
 - Breadcrumb chips are not navigation. The `TEAMIZER` Home chip and repeated
   in-page brand/back rows are absent. Pills are reserved for meaningful domain
   state or identity context.
@@ -123,8 +188,9 @@ The header avatar opens a compact, tablet-bounded modal account sheet. It uses
 the existing Player avatar or deterministic initials, display name, and useful
 role/status context without showing ratings or Firebase identifiers. My
 profile, Settings, and ADMIN-only Administration are normal navigation actions;
-Sign out is visually separated as the destructive action. Sign out does not
-occupy permanent Home header space.
+Sign out is visually separated as the destructive action. These destinations
+remain outside primary bottom/sidebar navigation, and sign out does not occupy
+permanent header space.
 
 Settings is an authenticated route. Clear choice buttons offer System, Light,
 and Dark appearance plus Čeština and English language. The selected option
@@ -264,13 +330,34 @@ The implemented core Match flow follows these interaction requirements:
   replaces the current client proposal; there is no proposal history.
 - An IN_PROGRESS Match shows immutable persisted teams and a primary `Start
   scoring` action. It never implies scorekeeper ownership or transfer.
-- Scoring uses the `score` typography variant for instant readability. Team A
-  and B use their semantic color pairs plus labels. A large Player row/card is
-  the primary `+1` target, current Player goals are obvious, decrement is a
-  smaller secondary control, and Finish Match is safely separated from goal
-  entry. The shared medium Avatar sits inside the existing 80 pt row; the photo
-  is never a separate required tap target. Local goal entry never displays
-  network loading.
+- Active scoring is the first fully migrated Phase 4 feature screen. The shared
+  native header is its only Match identity; no date/location subtitle consumes
+  the live-scoring canvas. The compact semantic Team A/Team B score is the first
+  content child and remains sticky. Team A is always the left grid column and
+  Team B the right;
+  roster position produces paired rows for every supported team size without a
+  player-count-specific layout branch. A normal phone tile has an 84 pt minimum
+  and resolves to roughly 87 pt for a one-line name; a two-line name grows the
+  individual tile naturally. Tablet uses the same component in a wider inline
+  composition.
+- Each bounded Player tile has a semantic team-colored left accent and is the
+  entire `+1` target, with immediate pressed feedback. The only nested action is
+  a 48 pt minus target around a 36 pt visible circle; it stops propagation,
+  disables at zero, and never triggers the tile action. A 44 pt Avatar sits
+  beside a flexible name/details column. The compact `metric` goal count and
+  minus form the lower row, realistic names may wrap to two lines, and the
+  controls cannot overlap the name. Shared Avatar fallback behavior remains the
+  identity fallback. Player tiles and score panels use the same subdued
+  semantic team-border roles; borders remain quieter than accent strips and
+  goal/score text. An uneven roster keeps an invisible, noninteractive layout
+  slot opposite each unmatched Player so the paired columns stay aligned.
+  Local goal entry never displays network loading.
+- Active scoring temporarily suppresses authenticated primary chrome through
+  the shell visibility contract, so it has no phone bottom navigation or tablet
+  sidebar and regains physical-edge safe areas. The native Match header and
+  Back/direct-entry behavior remain shared. The completion action stays in
+  scroll content, uses the shared `Button`, and retains the existing irreversible
+  confirmation, pending retry, idempotency, and conflict behavior.
 - Local persistence failure blocks scoring with explicit error feedback.
 - Completion is confirmed as irreversible. A 409 completion conflict closes or
   discards the losing local result as defined by the concurrency design.

@@ -9,7 +9,7 @@ import {
   avatarSizeMetrics,
   type AvatarSize,
 } from './avatar-utils';
-import { radii } from './theme';
+import { borderWidths, radii } from './theme';
 import { useTheme } from './theme-provider';
 
 export type { AvatarSize } from './avatar-utils';
@@ -74,7 +74,7 @@ const styles = StyleSheet.create({
   frame: {
     alignItems: 'center',
     borderRadius: radii.pill,
-    borderWidth: 1,
+    borderWidth: borderWidths.subtle,
     justifyContent: 'center',
     overflow: 'hidden',
   },

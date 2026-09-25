@@ -1,7 +1,5 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Redirect, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
-import { StyleSheet, useWindowDimensions, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -14,45 +12,22 @@ import {
   StatusPill,
   Surface,
   TextField,
+  useResponsiveLayout,
 } from '@teamizer/ui';
 
-import type {
-  AdminPlayerDetail,
-  UpdateAdminPlayerInput,
-} from '../../../../src/api/contracts';
-import { matchQueryKeys } from '../../../../src/matches/match-query-keys';
-import { localizedErrorMessage } from '../../../../src/i18n/localized-error';
+import type { AdminPlayerDetail } from '../../../../src/api/contracts';
 import { AvatarManager } from '../../../../src/profiles/avatar-manager';
-import type { PreparedAvatar } from '../../../../src/profiles/avatar-picker';
 import {
   canAccessPlayerAdministration,
   canInviteGuest,
-  canSubmitGuestInvitation,
-  isValidInvitationEmail,
-  normalizeInvitationEmail,
-  requiresDeactivationConfirmation,
 } from '../../../../src/profiles/player-admin';
-import { profileQueryKeys } from '../../../../src/profiles/profile-query-keys';
+import {
+  playerAttributeKeys,
+  useAdminPlayerController,
+} from '../../../../src/profiles/use-admin-player-controller';
 import { useAppServices } from '../../../../src/providers/app-services-context';
 import { useSession } from '../../../../src/session/session-context';
-import { statisticsQueryKeys } from '../../../../src/statistics/statistics-query-keys';
 import { AppScreen } from '../../../../src/ui/app-screen';
-
-type AttributeKey = 'speed' | 'endurance' | 'defense' | 'attack' | 'technique';
-const attributeKeys: AttributeKey[] = [
-  'speed',
-  'endurance',
-  'defense',
-  'attack',
-  'technique',
-];
-const defaultAttributes: Record<AttributeKey, number> = {
-  speed: 5,
-  endurance: 5,
-  defense: 5,
-  attack: 5,
-  technique: 5,
-};
 
 export default function AdminPlayerDetailRoute() {
   const { t } = useTranslation();
@@ -61,116 +36,24 @@ export default function AdminPlayerDetailRoute() {
     typeof parameters.playerId === 'string' ? parameters.playerId : null;
   const { state, refreshCurrentUser } = useSession();
   const { apiClient } = useAppServices();
-  const queryClient = useQueryClient();
-  const { width } = useWindowDimensions();
-  const detailQuery = useQuery({
-    queryKey: profileQueryKeys.adminDetail(playerId ?? 'invalid'),
-    queryFn: () => apiClient.getAdminPlayerDetail(playerId ?? ''),
-    enabled:
-      playerId !== null &&
-      state.status === 'AUTHENTICATED' &&
-      canAccessPlayerAdministration(state.currentUser.user.role),
-  });
-  const [nameOverride, setNameOverride] = useState<string | null>(null);
-  const [attributesOverride, setAttributesOverride] = useState<Record<
-    AttributeKey,
-    number
-  > | null>(null);
-  const [authProviderId, setAuthProviderId] = useState('');
-  const [invitationEmail, setInvitationEmail] = useState('');
-  const [showAdvancedConversion, setShowAdvancedConversion] = useState(false);
-  const [confirmingDeactivation, setConfirmingDeactivation] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-
-  const name = nameOverride ?? detailQuery.data?.name ?? '';
-  const attributes =
-    attributesOverride ?? detailQuery.data?.attributes ?? defaultAttributes;
+  const { isTablet } = useResponsiveLayout();
+  const authorized =
+    state.status === 'AUTHENTICATED' &&
+    canAccessPlayerAdministration(state.currentUser.user.role);
   const currentPlayerId =
     state.status === 'AUTHENTICATED' ? state.currentUser.player.id : null;
   const administrationDisabled =
     state.status !== 'AUTHENTICATED' ||
     state.currentUser.player.status !== 'ACTIVE';
-
-  const publish = async (player: AdminPlayerDetail) => {
-    queryClient.setQueryData(profileQueryKeys.adminDetail(player.id), player);
-    queryClient.setQueryData(statisticsQueryKeys.player(player.id), player);
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: profileQueryKeys.root }),
-      queryClient.invalidateQueries({ queryKey: statisticsQueryKeys.root }),
-      queryClient.invalidateQueries({ queryKey: matchQueryKeys.root }),
-      player.id === currentPlayerId ? refreshCurrentUser() : Promise.resolve(),
-    ]);
-  };
-  const updateMutation = useMutation({
-    mutationFn: (input: UpdateAdminPlayerInput) =>
-      apiClient.updateAdminPlayer(playerId ?? '', input),
-    onSuccess: async (player) => {
-      setConfirmingDeactivation(false);
-      setMessage(t('adminPlayer.updated'));
-      await publish(player);
-      setNameOverride(null);
-      setAttributesOverride(null);
-    },
+  const player = useAdminPlayerController({
+    administrationDisabled,
+    apiClient,
+    currentPlayerId,
+    enabled: authorized,
+    playerId,
+    refreshCurrentUser,
   });
-  const avatarMutation = useMutation({
-    mutationFn: (file: PreparedAvatar) =>
-      apiClient.uploadAdminPlayerAvatar(playerId ?? '', file),
-    onSuccess: async (player) => {
-      setMessage(t('adminPlayer.photoUpdated'));
-      await publish(player);
-    },
-  });
-  const removeAvatarMutation = useMutation({
-    mutationFn: async () => {
-      await apiClient.deletePlayerAvatar(playerId ?? '');
-      return apiClient.getAdminPlayerDetail(playerId ?? '');
-    },
-    onSuccess: async (player) => {
-      setMessage(t('adminPlayer.photoRemoved'));
-      await publish(player);
-    },
-  });
-  const conversionMutation = useMutation({
-    mutationFn: () => apiClient.convertGuest(playerId ?? '', authProviderId),
-    onSuccess: async () => {
-      setAuthProviderId('');
-      setMessage(t('adminPlayer.conversionSuccess'));
-      const player = await apiClient.getAdminPlayerDetail(playerId ?? '');
-      await publish(player);
-    },
-  });
-  const invitationMutation = useMutation({
-    mutationFn: () => apiClient.inviteGuest(playerId ?? '', invitationEmail),
-    onSuccess: (invitation) => {
-      setInvitationEmail(normalizeInvitationEmail(invitationEmail));
-      setMessage(
-        t(
-          invitation.status === 'ACCEPTED'
-            ? 'adminPlayer.invitationAlreadyAccepted'
-            : 'adminPlayer.invitationSent',
-        ),
-      );
-    },
-  });
-  const error =
-    updateMutation.error ??
-    removeAvatarMutation.error ??
-    invitationMutation.error ??
-    conversionMutation.error;
-  const errorMessage = localizedErrorMessage(
-    error,
-    t,
-    invitationMutation.error
-      ? 'adminPlayer.invitationFailed'
-      : 'adminPlayer.saveFailed',
-  );
-  const busy =
-    updateMutation.isPending ||
-    avatarMutation.isPending ||
-    removeAvatarMutation.isPending ||
-    invitationMutation.isPending ||
-    conversionMutation.isPending;
-  const invitationEmailValid = isValidInvitationEmail(invitationEmail);
+  const { detailQuery } = player;
 
   if (
     state.status !== 'AUTHENTICATED' ||
@@ -217,11 +100,13 @@ export default function AdminPlayerDetailRoute() {
               message={t('adminPlayer.readOnly')}
             />
           ) : null}
-          {message ? <FeedbackBanner tone="success" message={message} /> : null}
-          {error ? (
-            <FeedbackBanner tone="error" message={errorMessage} />
+          {player.message ? (
+            <FeedbackBanner tone="success" message={player.message} />
           ) : null}
-          <View style={[styles.columns, width >= 700 && styles.columnsWide]}>
+          {player.errorMessage ? (
+            <FeedbackBanner tone="error" message={player.errorMessage} />
+          ) : null}
+          <View style={[styles.columns, isTablet && styles.columnsWide]}>
             <Surface style={styles.columnCard}>
               <View style={styles.sectionHeading}>
                 <AppText variant="eyebrow" tone="brand">
@@ -231,17 +116,17 @@ export default function AdminPlayerDetailRoute() {
               </View>
               <TextField
                 autoCapitalize="words"
-                editable={!busy && !administrationDisabled}
+                editable={!player.busy && !administrationDisabled}
                 label={t('profile.playerName')}
                 maxLength={120}
-                onChangeText={setNameOverride}
-                value={name}
+                onChangeText={player.setName}
+                value={player.name}
               />
               <Button
-                busy={updateMutation.isPending}
-                disabled={!name.trim() || administrationDisabled}
+                busy={player.updatePending}
+                disabled={!player.name.trim() || administrationDisabled}
                 label={t('adminPlayer.saveDetails')}
-                onPress={() => updateMutation.mutate({ name, attributes })}
+                onPress={player.saveDetails}
               />
             </Surface>
             <Surface style={styles.columnCard}>
@@ -253,27 +138,22 @@ export default function AdminPlayerDetailRoute() {
                 <AppText tone="muted">{t('adminPlayer.ratingsHint')}</AppText>
               </View>
               <View>
-                {attributeKeys.map((key) => {
+                {playerAttributeKeys.map((key) => {
                   const label = t(`attributes.${key}`);
                   return (
                     <NumberStepper
                       decreaseLabel={t('attributes.decrease', { label })}
-                      disabled={busy || administrationDisabled}
+                      disabled={player.busy || administrationDisabled}
                       increaseLabel={t('attributes.increase', { label })}
                       key={key}
                       label={label}
                       maximum={10}
                       minimum={1}
-                      onChange={(value) =>
-                        setAttributesOverride((current) => ({
-                          ...(current ?? attributes),
-                          [key]: value,
-                        }))
-                      }
-                      value={attributes[key]}
+                      onChange={(value) => player.setAttribute(key, value)}
+                      value={player.attributes[key]}
                       valueLabel={t('attributes.value', {
                         label,
-                        value: attributes[key],
+                        value: player.attributes[key],
                         maximum: 10,
                       })}
                     />
@@ -284,14 +164,14 @@ export default function AdminPlayerDetailRoute() {
           </View>
           <Surface style={styles.columnCard}>
             <AvatarManager
-              busy={busy || administrationDisabled}
+              busy={player.busy || administrationDisabled}
               name={detailQuery.data.name}
               url={detailQuery.data.avatarUrl}
               onRemove={async () => {
-                await removeAvatarMutation.mutateAsync();
+                await player.removeAvatar();
               }}
               onUpload={async (file) => {
-                await avatarMutation.mutateAsync(file);
+                await player.uploadAvatar(file);
               }}
             />
           </Surface>
@@ -316,9 +196,10 @@ export default function AdminPlayerDetailRoute() {
                   autoCapitalize="none"
                   autoComplete="email"
                   autoCorrect={false}
-                  editable={!busy && !administrationDisabled}
+                  editable={!player.busy && !administrationDisabled}
                   error={
-                    invitationEmail.length > 0 && !invitationEmailValid
+                    player.invitationEmail.length > 0 &&
+                    !player.invitationEmailValid
                       ? t('adminPlayer.invalidEmail')
                       : null
                   }
@@ -326,39 +207,33 @@ export default function AdminPlayerDetailRoute() {
                   keyboardType="email-address"
                   label={t('adminPlayer.email')}
                   maxLength={254}
-                  onChangeText={setInvitationEmail}
+                  onChangeText={player.setInvitationEmail}
                   textContentType="emailAddress"
-                  value={invitationEmail}
+                  value={player.invitationEmail}
                 />
                 <Button
                   accessibilityHint={t('adminPlayer.sendInvitationHint')}
-                  busy={invitationMutation.isPending}
-                  disabled={
-                    !canSubmitGuestInvitation(
-                      invitationEmail,
-                      busy,
-                      administrationDisabled,
-                    )
-                  }
+                  busy={player.invitationPending}
+                  disabled={!player.canSubmitInvitation}
                   label={t('adminPlayer.sendInvitation')}
-                  onPress={() => invitationMutation.mutate()}
+                  onPress={player.invite}
                 />
               </Surface>
               <Surface tone="muted" style={styles.columnCard}>
                 <Button
-                  accessibilityState={{ expanded: showAdvancedConversion }}
-                  disabled={busy || administrationDisabled}
+                  accessibilityState={{
+                    expanded: player.showAdvancedConversion,
+                  }}
+                  disabled={player.busy || administrationDisabled}
                   label={
-                    showAdvancedConversion
+                    player.showAdvancedConversion
                       ? t('adminPlayer.hideAdvanced')
                       : t('adminPlayer.advancedOptions')
                   }
-                  onPress={() =>
-                    setShowAdvancedConversion((current) => !current)
-                  }
+                  onPress={player.toggleAdvancedConversion}
                   variant="ghost"
                 />
-                {showAdvancedConversion ? (
+                {player.showAdvancedConversion ? (
                   <>
                     <View style={styles.sectionHeading}>
                       <AppText variant="heading">
@@ -371,19 +246,21 @@ export default function AdminPlayerDetailRoute() {
                     <TextField
                       autoCapitalize="none"
                       autoCorrect={false}
-                      editable={!busy && !administrationDisabled}
+                      editable={!player.busy && !administrationDisabled}
                       label={t('adminPlayer.firebaseUid')}
                       maxLength={255}
-                      onChangeText={setAuthProviderId}
-                      value={authProviderId}
+                      onChangeText={player.setAuthProviderId}
+                      value={player.authProviderId}
                     />
                     <Button
-                      busy={conversionMutation.isPending}
+                      busy={player.conversionPending}
                       disabled={
-                        !authProviderId.trim() || busy || administrationDisabled
+                        !player.authProviderId.trim() ||
+                        player.busy ||
+                        administrationDisabled
                       }
                       label={t('adminPlayer.convert')}
-                      onPress={() => conversionMutation.mutate()}
+                      onPress={player.convert}
                       variant="secondary"
                     />
                   </>
@@ -403,7 +280,8 @@ export default function AdminPlayerDetailRoute() {
               </AppText>
               <AppText tone="muted">{t('adminPlayer.statusHint')}</AppText>
             </View>
-            {detailQuery.data.status === 'ACTIVE' && confirmingDeactivation ? (
+            {detailQuery.data.status === 'ACTIVE' &&
+            player.confirmingDeactivation ? (
               <View style={styles.confirmation}>
                 <FeedbackBanner
                   tone="warning"
@@ -412,38 +290,36 @@ export default function AdminPlayerDetailRoute() {
                 />
                 <View style={styles.actions}>
                   <Button
-                    disabled={busy || administrationDisabled}
+                    disabled={player.busy || administrationDisabled}
                     fullWidth={false}
                     label={t('adminPlayer.keepActive')}
-                    onPress={() => setConfirmingDeactivation(false)}
+                    onPress={player.cancelDeactivation}
                     variant="secondary"
                   />
                   <Button
-                    busy={updateMutation.isPending}
+                    busy={player.updatePending}
                     fullWidth={false}
                     label={t('adminPlayer.confirmDeactivate')}
-                    onPress={() =>
-                      updateMutation.mutate({ status: 'INACTIVE' })
-                    }
-                    variant="danger"
+                    onPress={player.confirmDeactivation}
+                    variant="destructive"
                   />
                 </View>
               </View>
             ) : (
               <Button
-                disabled={busy || administrationDisabled}
+                disabled={player.busy || administrationDisabled}
                 label={
                   detailQuery.data.status === 'ACTIVE'
                     ? t('adminPlayer.deactivate')
                     : t('adminPlayer.reactivate')
                 }
                 onPress={() =>
-                  requiresDeactivationConfirmation(detailQuery.data.status)
-                    ? setConfirmingDeactivation(true)
-                    : updateMutation.mutate({ status: 'ACTIVE' })
+                  player.requestStatusChange(detailQuery.data.status)
                 }
                 variant={
-                  detailQuery.data.status === 'ACTIVE' ? 'danger' : 'secondary'
+                  detailQuery.data.status === 'ACTIVE'
+                    ? 'destructive'
+                    : 'secondary'
                 }
               />
             )}

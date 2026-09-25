@@ -6,13 +6,11 @@ import {
   canShowAdminMatchControls,
   canSubmitStart,
   createTransientProposal,
-  isMatchReadOnly,
   isStaleProposalConflict,
   movePlayer,
   matchRouteFor,
   primaryUpcomingMatch,
   proposalWasAdjusted,
-  reconcileProposal,
   swapPlayers,
   validateParticipantGroups,
   validateProposal,
@@ -156,18 +154,6 @@ describe('Match flow state', () => {
     expect(proposalWasAdjusted(movePlayer(proposal, ids.a))).toBe(true);
   });
 
-  it('invalidates transient proposals on attendance version or lifecycle changes', () => {
-    const match = openMatch();
-    const proposal = createTransientProposal(match, response());
-    expect(reconcileProposal(proposal, match)).toBe(proposal);
-    expect(
-      reconcileProposal(proposal, { ...match, stateVersion: 4 }),
-    ).toBeNull();
-    expect(
-      reconcileProposal(proposal, { ...match, status: 'IN_PROGRESS' }),
-    ).toBeNull();
-  });
-
   it('allows one valid Start submission and recognizes only stale 409 conflicts', () => {
     const match = openMatch();
     const proposal = createTransientProposal(match, response());
@@ -197,7 +183,7 @@ describe('Match flow state', () => {
     ).toBe(false);
   });
 
-  it('keeps admin controls pre-start only and later lifecycle states read-only', () => {
+  it('keeps admin controls pre-start only', () => {
     expect(canShowAdminMatchControls('PLAYER', 'OPEN_FOR_REGISTRATION')).toBe(
       false,
     );
@@ -205,9 +191,5 @@ describe('Match flow state', () => {
       true,
     );
     expect(canShowAdminMatchControls('ADMIN', 'IN_PROGRESS')).toBe(false);
-    expect(isMatchReadOnly('OPEN_FOR_REGISTRATION')).toBe(false);
-    expect(isMatchReadOnly('IN_PROGRESS')).toBe(true);
-    expect(isMatchReadOnly('FINISHED')).toBe(true);
-    expect(isMatchReadOnly('CANCELLED')).toBe(true);
   });
 });

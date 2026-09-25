@@ -1,6 +1,5 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
-import { StyleSheet, useWindowDimensions, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -8,63 +7,35 @@ import {
   Avatar,
   Button,
   FeedbackBanner,
-  layout,
   NumberStepper,
+  sizes,
   spacing,
   StatusPill,
   Surface,
   TextField,
+  useResponsiveLayout,
   useTheme,
 } from '@teamizer/ui';
 
-import {
-  ApiClientError,
-  type AuthenticatedApiClient,
-} from '../api/authenticated-api-client';
+import type { AuthenticatedApiClient } from '../api/authenticated-api-client';
 import type { Attendance, CurrentUser, MatchDetail } from '../api/contracts';
-import { localizedErrorMessage } from '../i18n/localized-error';
 import {
   canMovePlayer,
   canShowAdminMatchControls,
   canSubmitStart,
-  createTransientProposal,
-  isStaleProposalConflict,
-  movePlayer,
   proposalWasAdjusted,
-  swapPlayers,
   type TransientTeamProposal,
   validateParticipantGroups,
   validateProposal,
 } from './match-flow';
+import type { OpenMatchFeedback } from './open-match-feedback';
 import {
-  matchQueryKeys,
-  publishMatchState,
-  refreshMatchState,
-} from './match-query-keys';
-
-type AttributeKey = 'speed' | 'endurance' | 'defense' | 'attack' | 'technique';
-const attributeKeys: AttributeKey[] = [
-  'speed',
-  'endurance',
-  'defense',
-  'attack',
-  'technique',
-];
-type GuestDraft = {
-  name: string;
-  attributes: Record<AttributeKey, number>;
-};
-
-const emptyGuest = (): GuestDraft => ({
-  name: '',
-  attributes: {
-    speed: 5,
-    endurance: 5,
-    defense: 5,
-    attack: 5,
-    technique: 5,
-  },
-});
+  guestAttributeKeys,
+  type GuestDraft,
+  useOpenMatchParticipation,
+} from './use-open-match-participation';
+import { useMatchCancellation } from './use-match-lifecycle-actions';
+import { useMatchProposal } from './use-match-proposal';
 
 export function OpenMatchView({
   apiClient,
@@ -76,21 +47,8 @@ export function OpenMatchView({
   match: MatchDetail;
 }) {
   const { t } = useTranslation();
-  const queryClient = useQueryClient();
-  const { width } = useWindowDimensions();
-  const [proposal, setProposal] = useState<TransientTeamProposal | null>(null);
-  const [message, setMessage] = useState<{
-    tone: 'error' | 'success' | 'info' | 'warning';
-    title?: string | undefined;
-    text: string;
-  } | null>(null);
-  const [guestOpen, setGuestOpen] = useState(false);
-  const [guest, setGuest] = useState<GuestDraft>(emptyGuest);
-  const [selectedSwapPlayerId, setSelectedSwapPlayerId] = useState<
-    string | null
-  >(null);
-  const [confirmingStart, setConfirmingStart] = useState(false);
-  const [confirmingCancel, setConfirmingCancel] = useState(false);
+  const { isTablet } = useResponsiveLayout();
+  const [message, setMessage] = useState<OpenMatchFeedback | null>(null);
   const participantData = useMemo(
     () => validateParticipantGroups(match),
     [match],
@@ -98,169 +56,25 @@ export function OpenMatchView({
   const active = currentUser.player.status === 'ACTIVE';
   const isAdmin =
     active && canShowAdminMatchControls(currentUser.user.role, match.status);
-
-  const refreshMatch = async () => {
-    await refreshMatchState(queryClient, match.id);
-  };
-
-  const attendanceMutation = useMutation({
-    mutationFn: async (attendance: Attendance | null) => {
-      if (attendance === 'GOING') {
-        await apiClient.registerGoing(match.id);
-      } else if (attendance === 'NOT_GOING') {
-        await apiClient.updateParticipant(
-          match.id,
-          currentUser.player.id,
-          attendance,
-        );
-      } else {
-        await apiClient.removeRegistration(match.id);
-      }
-    },
-    onSuccess: async () => {
-      setProposal(null);
-      setMessage({
-        tone: 'success',
-        text: t('attendance.updated'),
-      });
-      await refreshMatch();
-    },
-    onError: (error) =>
-      setMessage(apiErrorMessage(error, t('attendance.updateFailed'), t)),
+  const proposalActions = useMatchProposal({
+    apiClient,
+    match,
+    setFeedback: setMessage,
   });
-
-  const participantMutation = useMutation({
-    mutationFn: async ({
-      attendance,
-      playerId,
-    }: {
-      attendance: Attendance;
-      playerId: string;
-    }) => {
-      if (
-        attendance === 'GOING' &&
-        match.participants.unanswered.some(({ id }) => id === playerId)
-      ) {
-        await apiClient.addParticipant(match.id, { playerId });
-        return;
-      }
-      await apiClient.updateParticipant(match.id, playerId, attendance);
-    },
-    onSuccess: async () => {
-      setProposal(null);
-      setMessage({ tone: 'success', text: t('attendance.participantUpdated') });
-      await refreshMatch();
-    },
-    onError: (error) =>
-      setMessage(apiErrorMessage(error, t('attendance.participantFailed'), t)),
+  const participation = useOpenMatchParticipation({
+    apiClient,
+    currentUser,
+    match,
+    invalidateProposal: proposalActions.invalidate,
+    setFeedback: setMessage,
   });
-
-  const guestMutation = useMutation({
-    mutationFn: () =>
-      apiClient.addParticipant(match.id, {
-        guest: {
-          name: guest.name,
-          attributes: guest.attributes,
-        },
-      }),
-    onSuccess: async ({ player }) => {
-      setProposal(null);
-      setGuest(emptyGuest());
-      setGuestOpen(false);
-      setMessage({
-        tone: 'success',
-        text: t('guest.success', { name: player?.name ?? t('common.guest') }),
-      });
-      await refreshMatch();
-    },
-    onError: (error) =>
-      setMessage(apiErrorMessage(error, t('guest.failed'), t)),
+  const cancellation = useMatchCancellation({
+    apiClient,
+    match,
+    invalidateProposal: proposalActions.invalidate,
+    setFeedback: setMessage,
   });
-
-  const generationMutation = useMutation({
-    mutationFn: () => apiClient.generateTeams(match.id),
-    onSuccess: async (response) => {
-      try {
-        const currentMatch = await apiClient.getMatch(match.id);
-        if (currentMatch.stateVersion !== match.stateVersion) {
-          queryClient.setQueryData(
-            matchQueryKeys.detail(match.id),
-            currentMatch,
-          );
-          throw new Error(t('teams.regenerateHint'));
-        }
-        const nextProposal = createTransientProposal(currentMatch, response);
-        queryClient.setQueryData(matchQueryKeys.detail(match.id), currentMatch);
-        setProposal(nextProposal);
-        setSelectedSwapPlayerId(null);
-        setMessage({
-          tone: 'success',
-          text: t('teams.proposalReady'),
-        });
-      } catch {
-        setProposal(null);
-        setMessage({
-          tone: 'error',
-          title: t('teams.proposalRejected'),
-          text: t('teams.failed'),
-        });
-      }
-    },
-    onError: (error) =>
-      setMessage(apiErrorMessage(error, t('teams.failed'), t)),
-  });
-
-  const startMutation = useMutation({
-    mutationFn: async () => {
-      if (!proposal) {
-        throw new Error(t('teams.generate'));
-      }
-      const validation = validateProposal(match, proposal);
-      if (!validation.valid) {
-        throw new Error(validation.reason);
-      }
-      return apiClient.startMatch(match.id, {
-        teamAPlayerIds: proposal.teamAPlayerIds,
-        teamBPlayerIds: proposal.teamBPlayerIds,
-        proposalReceipt: proposal.proposalReceipt,
-      });
-    },
-    onSuccess: async (startedMatch) => {
-      setProposal(null);
-      setConfirmingStart(false);
-      await publishMatchState(queryClient, startedMatch);
-    },
-    onError: async (error) => {
-      setConfirmingStart(false);
-      if (error instanceof ApiClientError && isStaleProposalConflict(error)) {
-        setProposal(null);
-        setMessage({
-          tone: 'warning',
-          title: t('teams.regenerateTitle'),
-          text: t('teams.regenerateHint'),
-        });
-        await refreshMatch();
-        return;
-      }
-      setMessage(apiErrorMessage(error, t('teams.startFailed'), t));
-    },
-  });
-
-  const cancelMutation = useMutation({
-    mutationFn: () => apiClient.cancelMatch(match.id),
-    onSuccess: async (cancelledMatch) => {
-      setProposal(null);
-      setConfirmingCancel(false);
-      await publishMatchState(queryClient, cancelledMatch);
-    },
-    onError: async (error) => {
-      setConfirmingCancel(false);
-      setMessage(apiErrorMessage(error, t('cancellation.failed'), t));
-      if (error instanceof ApiClientError && error.status === 409) {
-        await refreshMatch();
-      }
-    },
-  });
+  const proposal = proposalActions.proposal;
 
   if (!participantData.valid) {
     return (
@@ -272,7 +86,7 @@ export function OpenMatchView({
         />
         <Button
           label={t('attendance.refresh')}
-          onPress={() => void refreshMatch()}
+          onPress={() => void participation.refreshMatch()}
         />
       </View>
     );
@@ -284,12 +98,12 @@ export function OpenMatchView({
     : null;
   const mayGenerate = active && match.participants.going.length >= 2;
   const busy =
-    attendanceMutation.isPending ||
-    participantMutation.isPending ||
-    guestMutation.isPending ||
-    generationMutation.isPending ||
-    startMutation.isPending ||
-    cancelMutation.isPending;
+    participation.attendance.isPending ||
+    participation.participant.isPending ||
+    participation.guest.isPending ||
+    proposalActions.generationPending ||
+    proposalActions.startPending ||
+    cancellation.isPending;
 
   return (
     <View style={styles.section}>
@@ -318,34 +132,34 @@ export function OpenMatchView({
         <View style={styles.buttonRow}>
           <Button
             busy={
-              attendanceMutation.isPending &&
-              attendanceMutation.variables === 'GOING'
+              participation.attendance.isPending &&
+              participation.attendance.pendingValue === 'GOING'
             }
             disabled={!active || busy || match.myAttendance === 'GOING'}
             fullWidth={false}
             label={t('attendance.going')}
-            onPress={() => attendanceMutation.mutate('GOING')}
+            onPress={() => participation.attendance.update('GOING')}
           />
           <Button
             busy={
-              attendanceMutation.isPending &&
-              attendanceMutation.variables === 'NOT_GOING'
+              participation.attendance.isPending &&
+              participation.attendance.pendingValue === 'NOT_GOING'
             }
             disabled={!active || busy || match.myAttendance === 'NOT_GOING'}
             fullWidth={false}
             label={t('attendance.notGoing')}
-            onPress={() => attendanceMutation.mutate('NOT_GOING')}
+            onPress={() => participation.attendance.update('NOT_GOING')}
             variant="secondary"
           />
           <Button
             busy={
-              attendanceMutation.isPending &&
-              attendanceMutation.variables === null
+              participation.attendance.isPending &&
+              participation.attendance.pendingValue === null
             }
             disabled={!active || busy || match.myAttendance === null}
             fullWidth={false}
             label={t('attendance.clear')}
-            onPress={() => attendanceMutation.mutate(null)}
+            onPress={() => participation.attendance.update(null)}
             variant="ghost"
           />
         </View>
@@ -356,25 +170,18 @@ export function OpenMatchView({
         isAdmin={isAdmin}
         match={match}
         onUpdate={(playerId, attendance) =>
-          participantMutation.mutate({ playerId, attendance })
+          participation.participant.update(playerId, attendance)
         }
       />
 
       <GuestSection
-        busy={guestMutation.isPending}
+        busy={participation.guest.isPending}
         disabled={!active || busy}
-        draft={guest}
-        open={guestOpen}
-        onChange={setGuest}
-        onSubmit={() => {
-          const name = guest.name.trim();
-          if (!name) {
-            setMessage({ tone: 'error', text: t('guest.missingName') });
-            return;
-          }
-          guestMutation.mutate();
-        }}
-        onToggle={() => setGuestOpen((open) => !open)}
+        draft={participation.guest.draft}
+        open={participation.guest.isOpen}
+        onChange={participation.guest.setDraft}
+        onSubmit={participation.guest.submit}
+        onToggle={participation.guest.toggle}
       />
 
       <View style={styles.generationSection}>
@@ -389,10 +196,10 @@ export function OpenMatchView({
           <FeedbackBanner tone="info" message={t('teams.minimum')} />
         ) : null}
         <Button
-          busy={generationMutation.isPending}
+          busy={proposalActions.generationPending}
           disabled={!mayGenerate || busy}
           label={proposal ? t('teams.generateDifferent') : t('teams.generate')}
-          onPress={() => generationMutation.mutate()}
+          onPress={proposalActions.generate}
           variant={proposal ? 'secondary' : 'primary'}
         />
       </View>
@@ -401,28 +208,10 @@ export function OpenMatchView({
         <ProposalEditor
           playersById={playersById}
           proposal={proposal}
-          selectedSwapPlayerId={selectedSwapPlayerId}
-          wide={width >= 700}
-          onMove={(playerId) => {
-            setProposal((current) =>
-              current ? movePlayer(current, playerId) : current,
-            );
-            setSelectedSwapPlayerId(null);
-            setConfirmingStart(false);
-          }}
-          onSelectSwap={(playerId) => {
-            if (!selectedSwapPlayerId) {
-              setSelectedSwapPlayerId(playerId);
-              return;
-            }
-            setProposal((current) =>
-              current
-                ? swapPlayers(current, selectedSwapPlayerId, playerId)
-                : current,
-            );
-            setSelectedSwapPlayerId(null);
-            setConfirmingStart(false);
-          }}
+          selectedSwapPlayerId={proposalActions.selectedSwapPlayerId}
+          wide={isTablet}
+          onMove={proposalActions.move}
+          onSelectSwap={proposalActions.selectSwap}
         />
       ) : null}
 
@@ -442,7 +231,7 @@ export function OpenMatchView({
               message={t('errors.INVALID_TEAM_COMPOSITION')}
             />
           ) : null}
-          {confirmingStart ? (
+          {proposalActions.confirmingStart ? (
             <View style={styles.confirmation}>
               <FeedbackBanner
                 tone="warning"
@@ -451,17 +240,17 @@ export function OpenMatchView({
               />
               <View style={styles.buttonRowEnd}>
                 <Button
-                  disabled={startMutation.isPending}
+                  disabled={proposalActions.startPending}
                   fullWidth={false}
                   label={t('teams.keepEditing')}
-                  onPress={() => setConfirmingStart(false)}
+                  onPress={proposalActions.cancelStartConfirmation}
                   variant="secondary"
                 />
                 <Button
-                  busy={startMutation.isPending}
+                  busy={proposalActions.startPending}
                   fullWidth={false}
                   label={t('teams.confirmStart')}
-                  onPress={() => startMutation.mutate()}
+                  onPress={proposalActions.start}
                 />
               </View>
             </View>
@@ -469,7 +258,7 @@ export function OpenMatchView({
             <Button
               disabled={!canSubmitStart(match, proposal, busy)}
               label={t('teams.start')}
-              onPress={() => setConfirmingStart(true)}
+              onPress={proposalActions.beginStartConfirmation}
             />
           )}
         </Surface>
@@ -481,7 +270,7 @@ export function OpenMatchView({
             <AppText variant="heading">{t('cancellation.title')}</AppText>
             <AppText tone="muted">{t('cancellation.hint')}</AppText>
           </View>
-          {confirmingCancel ? (
+          {cancellation.confirming ? (
             <View style={styles.confirmation}>
               <FeedbackBanner
                 tone="warning"
@@ -490,18 +279,18 @@ export function OpenMatchView({
               />
               <View style={styles.buttonRowEnd}>
                 <Button
-                  disabled={cancelMutation.isPending}
+                  disabled={cancellation.isPending}
                   fullWidth={false}
                   label={t('cancellation.keep')}
-                  onPress={() => setConfirmingCancel(false)}
+                  onPress={cancellation.cancelConfirmation}
                   variant="secondary"
                 />
                 <Button
-                  busy={cancelMutation.isPending}
+                  busy={cancellation.isPending}
                   fullWidth={false}
                   label={t('cancellation.confirm')}
-                  onPress={() => cancelMutation.mutate()}
-                  variant="danger"
+                  onPress={cancellation.cancel}
+                  variant="destructive"
                 />
               </View>
             </View>
@@ -509,8 +298,8 @@ export function OpenMatchView({
             <Button
               disabled={busy}
               label={t('cancellation.title')}
-              onPress={() => setConfirmingCancel(true)}
-              variant="danger"
+              onPress={cancellation.beginConfirmation}
+              variant="destructive"
             />
           )}
         </Surface>
@@ -685,7 +474,7 @@ function GuestSection({
             value={draft.name}
           />
           <View>
-            {attributeKeys.map((key) => {
+            {guestAttributeKeys.map((key) => {
               const label = t(`attributes.${key}`);
               return (
                 <NumberStepper
@@ -896,24 +685,6 @@ function ProposalTeam({
   );
 }
 
-function apiErrorMessage(
-  error: unknown,
-  fallback: string,
-  t: ReturnType<typeof useTranslation>['t'],
-) {
-  if (error instanceof ApiClientError) {
-    return {
-      tone: 'error' as const,
-      title: undefined,
-      text: localizedErrorMessage(error, t) || fallback,
-    };
-  }
-  return {
-    tone: 'error' as const,
-    text: fallback,
-  };
-}
-
 const styles = StyleSheet.create({
   section: { gap: spacing.xl },
   sectionHeading: { gap: spacing.xs },
@@ -943,7 +714,7 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: spacing.sm,
     justifyContent: 'space-between',
-    minHeight: layout.minimumTouchTarget + 8,
+    minHeight: sizes.minimumTouchTarget + 8,
     paddingVertical: spacing.xs,
   },
   playerName: { flex: 1, gap: spacing.xxs, minWidth: 120 },

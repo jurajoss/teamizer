@@ -1,12 +1,16 @@
-import { router } from 'expo-router';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { router, usePathname, type Href } from 'expo-router';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
-import { spacing, typography, useTheme } from '@teamizer/ui';
+import { AppText, radii, sizes, spacing, useTheme } from '@teamizer/ui';
+
+import { AppIcon } from '../ui/icons/app-icon';
+import { nestedBackFallback } from './header-policy';
 
 export function HeaderBackButton() {
   const { colors } = useTheme();
   const { t } = useTranslation();
+  const pathname = usePathname();
 
   const goBack = () => {
     if (router.canGoBack()) {
@@ -14,7 +18,7 @@ export function HeaderBackButton() {
       return;
     }
 
-    router.replace('/home');
+    router.replace(nestedBackFallback(pathname) as Href);
   };
 
   return (
@@ -29,10 +33,10 @@ export function HeaderBackButton() {
       ]}
     >
       <View style={styles.content}>
-        <Text style={[styles.chevron, { color: colors.accent }]}>{'‹'}</Text>
-        <Text style={[styles.label, { color: colors.accent }]}>
+        <AppIcon color={colors.accent} name="back" size={sizes.icon.medium} />
+        <AppText variant="body" style={{ color: colors.accent }}>
           {t('common.back')}
-        </Text>
+        </AppText>
       </View>
     </Pressable>
   );
@@ -41,24 +45,14 @@ export function HeaderBackButton() {
 const styles = StyleSheet.create({
   button: {
     alignItems: 'center',
-    borderRadius: 10,
+    borderRadius: radii.sm,
     justifyContent: 'center',
-    minHeight: 48,
-    minWidth: 48,
-  },
-  chevron: {
-    fontSize: 32,
-    fontWeight: '300',
-    lineHeight: 32,
-    marginTop: -2,
+    minHeight: sizes.minimumTouchTarget,
+    minWidth: sizes.minimumTouchTarget,
   },
   content: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: 2,
-  },
-  label: {
-    fontSize: typography.body.fontSize,
-    fontWeight: '500',
+    gap: spacing.xxs,
   },
 });

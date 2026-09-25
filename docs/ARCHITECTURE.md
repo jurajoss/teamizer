@@ -36,6 +36,29 @@ Firebase authenticates. Backend validates tokens and maps them to User/Player. F
 ## Authorization
 Server-side authorization follows PRODUCT.md; UI is not a security boundary.
 
+## Mobile navigation shell
+
+All authenticated mobile routes remain in one Expo Router stack. The shell owns
+one canonical definition of the authenticated primary areas (`/home`,
+`/matches`, `/players`, and `/statistics`) and composes it as bottom navigation
+below the shared 700 px tablet breakpoint or as a left sidebar at and above it.
+Feature screens and authorization rules are shared between modes. Match and
+Player details retain their single canonical `/matches/:matchId` and
+`/players/:playerId` routes; the shell does not create tab-specific copies or
+hold Match lifecycle/scoring state.
+
+Primary switches use framework pop-to/replace behavior instead of accumulating
+stack entries. Nested workflows use native stack push/Back behavior, with
+canonical-area fallbacks for direct deep-link entry. The shell owns navigation
+safe areas, while `AppScreen` owns content spacing, scrolling, keyboard
+avoidance, and width constraints.
+
+A focused nested workflow may request temporary removal of primary chrome while
+its route is focused. Active local scoring uses this shell contract rather than
+covering the phone bottom navigation or duplicating navigation. Removing the
+chrome also transfers bottom/left physical safe-area ownership back to
+`AppScreen`; leaving scoring restores the normal responsive shell.
+
 ## Match persistence
 Lifecycle:
 `OPEN_FOR_REGISTRATION -> IN_PROGRESS -> FINISHED`, with CANCELLED before start.
@@ -50,6 +73,12 @@ Do not add a global DB constraint allowing only one IN_PROGRESS match. Multiple 
 
 ## Local scoring
 Each device can create its own local scoring state for IN_PROGRESS. No authoritative scorekeeper and no live synchronization. Local state should survive background/navigation/restart where technically possible. Goal entry never calls backend. No recovery/transfer mechanism.
+
+The active scoring presentation consumes the existing scoring-session
+controller and durable draft as read-only inputs plus increment, decrement, and
+finish commands. Responsive layout, sticky-score composition, and shell
+visibility remain presentation concerns; they do not create another scoring
+state or change completion semantics.
 
 ## Completion
 Completion validates and persists the result transactionally. The IN_PROGRESS -> FINISHED transition must be atomic. Use idempotency keys.

@@ -33,6 +33,20 @@ export function shouldInitializeScoringSession(
   );
 }
 
+export type ScoringSessionNotice =
+  | { code: 'DRAFT_RESTORED' }
+  | { code: 'COMPLETION_PENDING' }
+  | { code: 'COMPLETION_UNCONFIRMED'; detail?: string };
+
+export type ScoringCompletionOutcome = 'SAVED' | 'CONFLICTED';
+
+export function scoringSessionIdentity(
+  userId: string,
+  match: MatchDetail,
+): string {
+  return `${userId}:${match.id}:${match.stateVersion}:${match.status}`;
+}
+
 export type ScoringSessionState =
   | { status: 'LOADING' }
   | { status: 'READY_TO_START'; match: MatchDetail }
@@ -40,7 +54,7 @@ export type ScoringSessionState =
       status: 'SCORING';
       match: MatchDetail;
       draft: LocalMatchDraftV1;
-      message: string | null;
+      notice: ScoringSessionNotice | null;
     }
   | {
       status: 'CORRUPT_DRAFT' | 'STALE_DRAFT';
@@ -57,7 +71,7 @@ export type ScoringSessionState =
   | {
       status: 'FINISHED';
       match: MatchDetail;
-      message: string | null;
+      outcome: ScoringCompletionOutcome | null;
       cleanupWarning: string | null;
     };
 
@@ -68,6 +82,7 @@ export class ScoringSessionController {
   private readonly listeners = new Set<StateListener>();
   private operationQueue: Promise<void> = Promise.resolve();
   private completionPromise: Promise<void> | null = null;
+  private initializedSessionIdentity: string | null = null;
   private userId: string | null = null;
   private match: MatchDetail | null = null;
 
@@ -92,6 +107,12 @@ export class ScoringSessionController {
   }
 
   initialize(userId: string, match: MatchDetail): Promise<void> {
+    const sessionIdentity = scoringSessionIdentity(userId, match);
+    if (sessionIdentity === this.initializedSessionIdentity) {
+      return this.operationQueue;
+    }
+    this.initializedSessionIdentity = sessionIdentity;
+
     return this.enqueue(async () => {
       this.userId = userId;
       this.match = match;
@@ -101,7 +122,7 @@ export class ScoringSessionController {
         this.setState({
           status: 'FINISHED',
           match,
-          message: null,
+          outcome: null,
           cleanupWarning,
         });
         return;
@@ -172,10 +193,10 @@ export class ScoringSessionController {
           status: 'SCORING',
           match,
           draft: stored.draft,
-          message:
+          notice:
             stored.draft.completion.state === 'PENDING'
-              ? 'A completion attempt is pending. Retry to submit the exact same result.'
-              : 'Your saved score was restored on this device.',
+              ? { code: 'COMPLETION_PENDING' }
+              : { code: 'DRAFT_RESTORED' },
         });
       } catch (error) {
         this.setState({
@@ -208,7 +229,7 @@ export class ScoringSessionController {
           status: 'SCORING',
           match: context.match,
           draft,
-          message: null,
+          notice: null,
         });
       } catch (error) {
         this.setState({
@@ -288,7 +309,7 @@ export class ScoringSessionController {
         this.setState({
           ...currentState,
           draft: nextDraft,
-          message: null,
+          notice: null,
         });
       } catch (error) {
         this.setState({
@@ -336,7 +357,7 @@ export class ScoringSessionController {
       );
       await this.finishWithAuthoritativeResult(
         pendingDraft,
-        'The final result was saved.',
+        'SAVED',
         'SUCCEEDED',
       );
     } catch (error) {
@@ -377,7 +398,7 @@ export class ScoringSessionController {
         this.setState({
           ...currentState,
           draft: pending,
-          message: 'Submitting the final result…',
+          notice: { code: 'COMPLETION_PENDING' },
         });
         result = pending;
       } catch (error) {
@@ -403,7 +424,7 @@ export class ScoringSessionController {
     if (error instanceof ApiClientError && error.status === 409) {
       await this.finishWithAuthoritativeResult(
         pendingDraft,
-        'Another device’s final result was accepted first.',
+        'CONFLICTED',
         'CONFLICTED',
       );
       return;
@@ -412,8 +433,7 @@ export class ScoringSessionController {
     if (this.state.status === 'SCORING') {
       this.setState({
         ...this.state,
-        message:
-          'Completion was not confirmed. Your score and retry key are saved; retry when ready.',
+        notice: { code: 'COMPLETION_UNCONFIRMED' },
       });
     }
   }
@@ -435,7 +455,12 @@ export class ScoringSessionController {
     try {
       await this.repository.save(activeDraft);
       const match = this.requireContext().match;
-      this.setState({ status: 'SCORING', match, draft: activeDraft, message });
+      this.setState({
+        status: 'SCORING',
+        match,
+        draft: activeDraft,
+        notice: { code: 'COMPLETION_UNCONFIRMED', detail: message },
+      });
     } catch (error) {
       this.block(pendingDraft, this.persistenceMessage(error));
     }
@@ -443,7 +468,7 @@ export class ScoringSessionController {
 
   private async finishWithAuthoritativeResult(
     pendingDraft: LocalMatchDraftV1,
-    message: string,
+    outcome: ScoringCompletionOutcome,
     terminalState: 'SUCCEEDED' | 'CONFLICTED',
   ): Promise<void> {
     let authoritative: MatchDetail;
@@ -454,8 +479,7 @@ export class ScoringSessionController {
       if (this.state.status === 'SCORING') {
         this.setState({
           ...this.state,
-          message:
-            'The server response could not be confirmed. Retry uses the same saved result and key.',
+          notice: { code: 'COMPLETION_UNCONFIRMED' },
         });
       }
       return;
@@ -487,7 +511,7 @@ export class ScoringSessionController {
     this.setState({
       status: 'FINISHED',
       match: authoritative,
-      message,
+      outcome,
       cleanupWarning,
     });
   }

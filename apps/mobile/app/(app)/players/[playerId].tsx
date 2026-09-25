@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
-import { StyleSheet, useWindowDimensions, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -9,9 +9,11 @@ import {
   Button,
   FeedbackBanner,
   radii,
+  sizes,
   spacing,
   StatusPill,
   Surface,
+  useResponsiveLayout,
   useTheme,
 } from '@teamizer/ui';
 
@@ -290,7 +292,7 @@ function HistoryCard({ match }: { match: PlayerMatchHistoryItem }) {
   const { t } = useTranslation();
   const { colors } = useTheme();
   const { language } = usePreferences();
-  const { width } = useWindowDimensions();
+  const { isTablet } = useResponsiveLayout();
   const goals = new Map(
     match.playerGoals.map(({ playerId, goals }) => [playerId, goals]),
   );
@@ -339,7 +341,7 @@ function HistoryCard({ match }: { match: PlayerMatchHistoryItem }) {
         </AppText>
       </View>
 
-      <View style={[styles.teams, width >= 700 && styles.teamsTablet]}>
+      <View style={[styles.teams, isTablet && styles.teamsTablet]}>
         {teams.map((team) => (
           <View key={team.id} style={styles.team}>
             <View
@@ -439,7 +441,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.sm,
     justifyContent: 'space-between',
-    minHeight: 52,
+    minHeight: sizes.controlHeight,
     paddingHorizontal: spacing.xs,
   },
   playerIdentity: { flex: 1 },

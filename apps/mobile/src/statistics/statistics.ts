@@ -39,10 +39,6 @@ export function formatGoalsPerMatch(
   }).format(value);
 }
 
-export function playerTypeLabel(type: 'REGULAR' | 'GUEST'): string | null {
-  return type === 'GUEST' ? 'Guest' : null;
-}
-
 export function playerRouteFor(playerId: string): `/players/${string}` {
   return `/players/${playerId}`;
 }

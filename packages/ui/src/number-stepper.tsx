@@ -1,7 +1,7 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText } from './app-text';
-import { layout, radii, spacing } from './theme';
+import { radii, sizes, spacing } from './theme';
 import { useTheme } from './theme-provider';
 
 export function NumberStepper({
@@ -82,12 +82,18 @@ function StepperButton({
       onPress={onPress}
       style={({ pressed }) => [
         styles.stepperButton,
-        { backgroundColor: colors.accentSoft },
+        {
+          backgroundColor: disabled
+            ? colors.disabledSurface
+            : colors.accentSoft,
+        },
         pressed && !disabled && { backgroundColor: colors.surfaceStrong },
-        disabled && styles.disabled,
       ]}
     >
-      <AppText variant="heading" style={{ color: colors.accent }}>
+      <AppText
+        variant="heading"
+        style={{ color: disabled ? colors.textDisabled : colors.accent }}
+      >
         {symbol}
       </AppText>
     </Pressable>
@@ -111,9 +117,8 @@ const styles = StyleSheet.create({
   stepperButton: {
     alignItems: 'center',
     borderRadius: radii.sm,
-    height: layout.minimumTouchTarget,
+    height: sizes.minimumTouchTarget,
     justifyContent: 'center',
-    width: layout.minimumTouchTarget,
+    width: sizes.minimumTouchTarget,
   },
-  disabled: { opacity: 0.35 },
 });

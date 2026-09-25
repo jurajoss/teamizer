@@ -1,11 +1,13 @@
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import type { PressableProps, StyleProp, ViewStyle } from 'react-native';
+import type { ReactNode } from 'react';
 
 import { AppText } from './app-text';
-import { layout, radii, spacing } from './theme';
+import { buttonColorSet, type ButtonVariant } from './button-state';
+import { borderWidths, radii, sizes, spacing } from './theme';
 import { useTheme } from './theme-provider';
 
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
+export type { ButtonVariant } from './button-state';
 
 export function Button({
   label,
@@ -13,6 +15,7 @@ export function Button({
   busy = false,
   disabled = false,
   fullWidth = true,
+  icon,
   style,
   accessibilityState,
   ...props
@@ -21,42 +24,22 @@ export function Button({
   variant?: ButtonVariant;
   busy?: boolean;
   fullWidth?: boolean;
+  icon?: ReactNode;
   style?: StyleProp<ViewStyle>;
 }) {
   const { colors } = useTheme();
   const unavailable = disabled || busy;
-  const foreground =
-    variant === 'primary'
-      ? colors.accentContrast
-      : variant === 'secondary'
-        ? colors.accent
-        : variant === 'danger'
-          ? colors.danger
-          : colors.textSecondary;
-  const surface =
-    variant === 'primary'
-      ? { backgroundColor: colors.accent }
-      : variant === 'secondary'
-        ? {
-            backgroundColor: colors.surface,
-            borderColor: colors.borderStrong,
-            borderWidth: 1,
-          }
-        : variant === 'danger'
-          ? { backgroundColor: colors.dangerSurface }
-          : { backgroundColor: 'transparent' };
-  const pressedSurface =
-    variant === 'primary'
-      ? { backgroundColor: colors.accentPressed }
-      : variant === 'secondary'
-        ? { backgroundColor: colors.accentSoft }
-        : variant === 'ghost'
-          ? { backgroundColor: colors.surfaceSubtle }
-          : { opacity: 0.78 };
+  const defaultColors = buttonColorSet(
+    colors,
+    variant,
+    unavailable ? 'disabled' : 'default',
+  );
+  const pressedColors = buttonColorSet(colors, variant, 'pressed');
 
   return (
     <Pressable
       {...props}
+      accessibilityLabel={props.accessibilityLabel ?? label}
       accessibilityRole="button"
       accessibilityState={{
         ...accessibilityState,
@@ -66,19 +49,39 @@ export function Button({
       disabled={unavailable}
       style={({ pressed }) => [
         styles.base,
-        surface,
+        {
+          backgroundColor: defaultColors.background,
+          borderColor: defaultColors.border,
+        },
         fullWidth && styles.fullWidth,
-        pressed && !unavailable && pressedSurface,
-        unavailable && styles.disabled,
+        pressed &&
+          !unavailable && {
+            backgroundColor: pressedColors.background,
+            borderColor: pressedColors.border,
+          },
         style,
       ]}
     >
       <View style={styles.content}>
-        {busy ? <ActivityIndicator color={foreground} size="small" /> : null}
+        {icon && !busy ? (
+          <View
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+          >
+            {icon}
+          </View>
+        ) : null}
+        {busy ? (
+          <ActivityIndicator
+            accessibilityElementsHidden
+            color={defaultColors.foreground}
+            importantForAccessibility="no-hide-descendants"
+            size="small"
+          />
+        ) : null}
         <AppText
           variant="bodyStrong"
-          style={{ color: foreground }}
-          numberOfLines={1}
+          style={[styles.label, { color: defaultColors.foreground }]}
         >
           {label}
         </AppText>
@@ -91,17 +94,19 @@ const styles = StyleSheet.create({
   base: {
     alignItems: 'center',
     borderRadius: radii.md,
+    borderWidth: borderWidths.subtle,
     justifyContent: 'center',
-    minHeight: layout.minimumTouchTarget + 4,
+    minHeight: sizes.controlHeight,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
   },
   content: {
     alignItems: 'center',
     flexDirection: 'row',
+    flexShrink: 1,
     gap: spacing.xs,
     justifyContent: 'center',
   },
+  label: { textAlign: 'center' },
   fullWidth: { width: '100%' },
-  disabled: { opacity: 0.5 },
 });

@@ -1,38 +1,8 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
-import {
-  leaveMatch,
-  matchViewportKey,
-  type MatchNavigation,
-} from './match-navigation';
-
-function navigation(canGoBack: boolean) {
-  return {
-    back: vi.fn(),
-    canGoBack: vi.fn(() => canGoBack),
-    replace: vi.fn(),
-  } satisfies MatchNavigation;
-}
+import { matchViewportKey } from './match-navigation';
 
 describe('Match navigation', () => {
-  it('returns through navigation history when Match detail was opened from home', () => {
-    const router = navigation(true);
-
-    leaveMatch(router);
-
-    expect(router.back).toHaveBeenCalledOnce();
-    expect(router.replace).not.toHaveBeenCalled();
-  });
-
-  it('returns a directly opened Match route to home', () => {
-    const router = navigation(false);
-
-    leaveMatch(router);
-
-    expect(router.back).not.toHaveBeenCalled();
-    expect(router.replace).toHaveBeenCalledWith('/home');
-  });
-
   it('resets the viewport across lifecycle and scoring presentation transitions', () => {
     expect(matchViewportKey('OPEN_FOR_REGISTRATION')).not.toBe(
       matchViewportKey('IN_PROGRESS', 'READY_TO_START'),

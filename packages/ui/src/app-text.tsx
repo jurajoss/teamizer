@@ -5,7 +5,16 @@ import { typography } from './theme';
 import { useTheme } from './theme-provider';
 
 export type TextVariant = keyof typeof typography;
-export type TextTone = 'default' | 'muted' | 'subtle' | 'brand' | 'error';
+export type TextTone =
+  | 'default'
+  | 'muted'
+  | 'subtle'
+  | 'brand'
+  | 'error'
+  | 'success'
+  | 'warning'
+  | 'info'
+  | 'disabled';
 
 export function AppText({
   children,
@@ -25,6 +34,10 @@ export function AppText({
     subtle: colors.textSubtle,
     brand: colors.accent,
     error: colors.danger,
+    success: colors.success,
+    warning: colors.warning,
+    info: colors.info,
+    disabled: colors.textDisabled,
   }[tone];
 
   return (

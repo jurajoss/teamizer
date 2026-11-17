@@ -119,7 +119,6 @@ function createController(
 
 async function start(controller: ScoringSessionController, userId = ids.userA) {
   await controller.initialize(userId, inProgressMatch());
-  await controller.startScoring();
 }
 
 describe('ScoringSessionController', () => {
@@ -135,22 +134,55 @@ describe('ScoringSessionController', () => {
     );
   });
 
-  it('does not expose a new scoring draft until the first durable save commits', async () => {
+  it('opens a new 0:0 scoring session silently only after its first durable save commits', async () => {
     const { controller, repository } = createController();
-    await controller.initialize(ids.userA, inProgressMatch());
     let releaseSave: (() => void) | undefined;
-    repository.beforeSave = () =>
-      new Promise<void>((resolve) => {
+    let markSaveStarted: (() => void) | undefined;
+    const saveStarted = new Promise<void>((resolve) => {
+      markSaveStarted = resolve;
+    });
+    repository.beforeSave = () => {
+      markSaveStarted?.();
+      return new Promise<void>((resolve) => {
         releaseSave = resolve;
       });
+    };
 
-    const starting = controller.startScoring();
-    await Promise.resolve();
+    const initializing = controller.initialize(ids.userA, inProgressMatch());
+    await saveStarted;
 
-    expect(controller.currentState.status).toBe('READY_TO_START');
+    expect(controller.currentState.status).toBe('LOADING');
     releaseSave?.();
-    await starting;
-    expect(controller.currentState.status).toBe('SCORING');
+    await initializing;
+    expect(controller.currentState).toMatchObject({
+      status: 'SCORING',
+      notice: null,
+      draft: {
+        score: { teamA: 0, teamB: 0 },
+        playerGoals: {
+          [ids.playerA]: 0,
+          [ids.playerB]: 0,
+          [ids.playerC]: 0,
+          [ids.playerD]: 0,
+        },
+      },
+    });
+  });
+
+  it('blocks instead of entering scoring when the initial durable save fails', async () => {
+    const { controller, repository } = createController();
+    repository.failNextSave = true;
+
+    await controller.initialize(ids.userA, inProgressMatch());
+
+    expect(controller.currentState).toMatchObject({
+      status: 'BLOCKED',
+      draft: null,
+      message: expect.stringContaining(
+        'Scoring is blocked to protect the result.',
+      ),
+    });
+    expect(repository.rows.size).toBe(0);
   });
 
   it('checks one unchanged scoring session only once across rerenders', async () => {
@@ -223,13 +255,16 @@ describe('ScoringSessionController', () => {
     expect(controller.currentState).toMatchObject({
       status: 'BLOCKED',
       draft: { score: { teamA: 0, teamB: 0 } },
+      message: expect.stringContaining(
+        'Scoring is blocked to protect the result.',
+      ),
     });
     expect(repository.rows.get(`${ids.userA}:${ids.match}`)?.score.teamA).toBe(
       0,
     );
   });
 
-  it('restores the exact durable score after a controller restart', async () => {
+  it('restores the exact durable score silently after a controller restart', async () => {
     const sharedRepository = new MemoryDraftRepository();
     const first = createController(sharedRepository).controller;
     await start(first);
@@ -241,7 +276,7 @@ describe('ScoringSessionController', () => {
 
     expect(restarted.currentState).toMatchObject({
       status: 'SCORING',
-      notice: { code: 'DRAFT_RESTORED' },
+      notice: null,
       draft: {
         score: { teamA: 0, teamB: 2 },
         playerGoals: { [ids.playerC]: 2 },
@@ -249,7 +284,7 @@ describe('ScoringSessionController', () => {
     });
   });
 
-  it('does not restore another authenticated user’s draft', async () => {
+  it('does not restore another authenticated user’s draft and starts that user at zero', async () => {
     const sharedRepository = new MemoryDraftRepository();
     const first = createController(sharedRepository).controller;
     await start(first, ids.userA);
@@ -258,7 +293,14 @@ describe('ScoringSessionController', () => {
     const secondUser = createController(sharedRepository).controller;
     await secondUser.initialize(ids.userB, inProgressMatch());
 
-    expect(secondUser.currentState.status).toBe('READY_TO_START');
+    expect(secondUser.currentState).toMatchObject({
+      status: 'SCORING',
+      notice: null,
+      draft: {
+        userId: ids.userB,
+        score: { teamA: 0, teamB: 0 },
+      },
+    });
   });
 
   it('blocks stale and corrupt drafts until explicit discard', async () => {
@@ -270,6 +312,15 @@ describe('ScoringSessionController', () => {
       inProgressMatch({ stateVersion: 9 }),
     );
     expect(staleController.currentState.status).toBe('STALE_DRAFT');
+    await staleController.discardDraft();
+    expect(staleController.currentState).toMatchObject({
+      status: 'SCORING',
+      notice: null,
+      draft: {
+        matchStateVersion: 9,
+        score: { teamA: 0, teamB: 0 },
+      },
+    });
 
     const corruptSetup = createController();
     corruptSetup.repository.nextLoad = {

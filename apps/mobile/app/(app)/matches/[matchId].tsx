@@ -7,8 +7,6 @@ import {
   Avatar,
   Button,
   FeedbackBanner,
-  radii,
-  sizes,
   spacing,
   StatusPill,
   Surface,
@@ -18,14 +16,17 @@ import {
 
 import { ApiClientError } from '../../../src/api/authenticated-api-client';
 import type { MatchDetail, MatchTeam } from '../../../src/api/contracts';
+import { FinishedMatchView } from '../../../src/matches/finished-match-view';
 import { formatMatchDate } from '../../../src/matches/match-flow';
 import { OpenMatchView } from '../../../src/matches/open-match-view';
 import {
   scoringIdentityForSession,
   useMatchRouteController,
 } from '../../../src/matches/use-match-route';
-import { matchViewportKey } from '../../../src/navigation/match-navigation';
-import { usePrimaryNavigationHiddenWhileFocused } from '../../../src/navigation/primary-navigation-visibility';
+import {
+  matchLifecycleDestination,
+  matchViewportKey,
+} from '../../../src/navigation/match-navigation';
 import { usePreferences } from '../../../src/preferences/preferences-context';
 import { useSession } from '../../../src/session/session-context';
 import { ActiveScoringScreen } from '../../../src/scoring/active-scoring-screen';
@@ -33,10 +34,7 @@ import type {
   ScoringSessionController,
   ScoringSessionState,
 } from '../../../src/scoring/scoring-session-controller';
-import {
-  completionOutcomeTranslationKey,
-  isActiveScoringStatus,
-} from '../../../src/scoring/scoring-session-presentation';
+import { completionOutcomeTranslationKey } from '../../../src/scoring/scoring-session-presentation';
 import { AppScreen } from '../../../src/ui/app-screen';
 import { FoundationScreen } from '../../../src/ui/foundation-screen';
 
@@ -53,12 +51,6 @@ export default function MatchScoringRoute() {
       matchId,
       scoringIdentity: scoringIdentityForSession(currentUser),
     });
-  usePrimaryNavigationHiddenWhileFocused(
-    isActiveScoringStatus(scoringState.status) &&
-      matchQuery.data?.status === 'IN_PROGRESS' &&
-      currentUser?.player.status === 'ACTIVE',
-  );
-
   if (!matchId) {
     return (
       <MatchPageFrame>
@@ -106,10 +98,11 @@ export default function MatchScoringRoute() {
     return <FoundationScreen busy message={t('auth.checking')} />;
   }
 
-  if (matchQuery.data.status === 'OPEN_FOR_REGISTRATION') {
+  const destination = matchLifecycleDestination(matchQuery.data.status);
+
+  if (destination === 'PRE_MATCH_DETAIL') {
     return (
       <MatchPageFrame key={matchViewportKey(matchQuery.data.status)}>
-        <MatchHeading match={matchQuery.data} />
         <OpenMatchView
           apiClient={apiClient}
           currentUser={session.currentUser}
@@ -120,7 +113,7 @@ export default function MatchScoringRoute() {
     );
   }
 
-  if (matchQuery.data.status === 'CANCELLED') {
+  if (destination === 'CANCELLED_DETAIL') {
     return (
       <MatchPageFrame key={matchViewportKey(matchQuery.data.status)}>
         <MatchHeading match={matchQuery.data} />
@@ -133,11 +126,10 @@ export default function MatchScoringRoute() {
     );
   }
 
-  if (matchQuery.data.status === 'FINISHED') {
+  if (destination === 'FINISHED_DETAIL') {
     return (
       <MatchPageFrame key={matchViewportKey(matchQuery.data.status)}>
-        <MatchHeading match={matchQuery.data} />
-        <FinishedMatch match={matchQuery.data} />
+        <FinishedMatchView match={matchQuery.data} />
       </MatchPageFrame>
     );
   }
@@ -163,7 +155,6 @@ export default function MatchScoringRoute() {
       <MatchPageFrame
         key={matchViewportKey(matchQuery.data.status, scoringState.status)}
       >
-        <MatchHeading match={matchQuery.data} />
         <Surface tone="muted" style={styles.centeredState}>
           <AppText variant="heading">{t('match.checkingScore')}</AppText>
         </Surface>
@@ -176,7 +167,6 @@ export default function MatchScoringRoute() {
       <MatchPageFrame
         key={matchViewportKey(matchQuery.data.status, scoringState.status)}
       >
-        <MatchHeading match={matchQuery.data} />
         <Surface tone="muted" style={styles.centeredState}>
           <AppText variant="heading">{t('match.refreshing')}</AppText>
         </Surface>
@@ -202,7 +192,6 @@ export default function MatchScoringRoute() {
     <MatchPageFrame
       key={matchViewportKey(matchQuery.data.status, scoringState.status)}
     >
-      <MatchHeading match={scoringState.match} />
       <ScoringStateView controller={controller} state={scoringState} />
     </MatchPageFrame>
   );
@@ -257,23 +246,6 @@ function ScoringStateView({
     return null;
   }
 
-  if (state.status === 'READY_TO_START') {
-    return (
-      <View style={styles.sectionGap}>
-        <FinalTeamRosters match={state.match} />
-        <FeedbackBanner
-          tone="info"
-          title={t('match.scoreOnDevice')}
-          message={t('match.scoreOnDeviceHint')}
-        />
-        <Button
-          label={t('match.startScoring')}
-          onPress={() => void controller.startScoring()}
-        />
-      </View>
-    );
-  }
-
   if (state.status === 'CORRUPT_DRAFT' || state.status === 'STALE_DRAFT') {
     return (
       <View style={styles.sectionGap}>
@@ -315,7 +287,7 @@ function ScoringStateView({
   if (state.status === 'FINISHED') {
     const messageKey = completionOutcomeTranslationKey(state.outcome);
     return (
-      <FinishedMatch
+      <FinishedMatchView
         cleanupWarning={state.cleanupWarning ? t('match.cleanupWarning') : null}
         match={state.match}
         message={messageKey ? t(messageKey) : null}
@@ -329,48 +301,6 @@ function ScoringStateView({
       title={t('match.scoringUnavailable')}
       message={t('match.cancelledHint')}
     />
-  );
-}
-
-function FinishedScoreboard({
-  score,
-}: {
-  score: NonNullable<MatchDetail['result']>['score'];
-}) {
-  const { colors } = useTheme();
-  const { t } = useTranslation();
-  return (
-    <Surface padding="medium" style={styles.scoreboard}>
-      <View
-        style={[styles.scoreSide, { backgroundColor: colors.teamASurface }]}
-      >
-        <AppText variant="eyebrow" style={{ color: colors.teamAText }}>
-          {t('common.team', { side: 'A' }).toUpperCase()}
-        </AppText>
-        <AppText
-          accessibilityLabel={`${t('common.team', { side: 'A' })}, ${score.teamA}`}
-          variant="score"
-        >
-          {score.teamA}
-        </AppText>
-      </View>
-      <AppText accessibilityElementsHidden variant="heading" tone="subtle">
-        –
-      </AppText>
-      <View
-        style={[styles.scoreSide, { backgroundColor: colors.teamBSurface }]}
-      >
-        <AppText variant="eyebrow" style={{ color: colors.teamBText }}>
-          {t('common.team', { side: 'B' }).toUpperCase()}
-        </AppText>
-        <AppText
-          accessibilityLabel={`${t('common.team', { side: 'B' })}, ${score.teamB}`}
-          variant="score"
-        >
-          {score.teamB}
-        </AppText>
-      </View>
-    </Surface>
   );
 }
 
@@ -403,75 +333,6 @@ function FinalTeamRosters({ match }: { match: MatchDetail }) {
   );
 }
 
-function FinishedMatch({
-  cleanupWarning,
-  match,
-  message,
-}: {
-  cleanupWarning?: string | null;
-  match: MatchDetail;
-  message?: string | null;
-}) {
-  const { colors } = useTheme();
-  const { t } = useTranslation();
-  const result = match.result;
-
-  if (!result) {
-    return (
-      <FeedbackBanner tone="error" message={t('match.unreadableResult')} />
-    );
-  }
-
-  const goals = new Map(
-    result.playerGoals.map(({ playerId, goals: total }) => [playerId, total]),
-  );
-
-  return (
-    <View style={styles.sectionGap}>
-      {message ? <FeedbackBanner tone="success" message={message} /> : null}
-      {cleanupWarning ? (
-        <FeedbackBanner tone="warning" message={cleanupWarning} />
-      ) : null}
-      <FinishedScoreboard score={result.score} />
-      <View style={styles.teamColumns}>
-        {orderedTeams(match).map((team) => (
-          <Surface key={team.id} style={styles.rosterTeam}>
-            <AppText
-              variant="heading"
-              style={{
-                color: team.side === 'A' ? colors.teamAText : colors.teamBText,
-              }}
-            >
-              {t('common.team', { side: team.side })}
-            </AppText>
-            {team.players.map((player) => (
-              <View
-                key={player.id}
-                style={[
-                  styles.finalPlayerRow,
-                  { borderTopColor: colors.border },
-                ]}
-              >
-                <View style={styles.finalPlayerIdentity}>
-                  <Avatar
-                    name={player.name}
-                    size="small"
-                    url={player.avatarUrl}
-                  />
-                  <AppText variant="bodyStrong">{player.name}</AppText>
-                </View>
-                <AppText variant="bodyStrong">
-                  {t('common.goalCount', { count: goals.get(player.id) ?? 0 })}
-                </AppText>
-              </View>
-            ))}
-          </Surface>
-        ))}
-      </View>
-    </View>
-  );
-}
-
 function orderedTeams(match: MatchDetail): MatchTeam[] {
   return [...(match.teams ?? [])].sort((first, second) =>
     first.side.localeCompare(second.side),
@@ -488,30 +349,4 @@ const styles = StyleSheet.create({
   teamColumnsWide: { alignItems: 'flex-start', flexDirection: 'row' },
   rosterTeam: { flex: 1, gap: spacing.md, minWidth: 0 },
   rosterRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
-  scoreboard: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  scoreSide: {
-    alignItems: 'center',
-    borderRadius: radii.md,
-    flex: 1,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.md,
-  },
-  finalPlayerRow: {
-    alignItems: 'center',
-    borderTopWidth: 1,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    minHeight: sizes.minimumTouchTarget,
-  },
-  finalPlayerIdentity: {
-    alignItems: 'center',
-    flex: 1,
-    flexDirection: 'row',
-    gap: spacing.sm,
-    minWidth: 0,
-  },
 });

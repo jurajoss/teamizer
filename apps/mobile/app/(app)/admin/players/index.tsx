@@ -139,7 +139,7 @@ export default function AdminPlayerListRoute() {
               })}
               accessibilityRole="button"
               key={player.id}
-              onPress={() => router.push(`/admin/players/${player.id}` as Href)}
+              onPress={() => router.push(`/players/${player.id}/edit` as Href)}
               style={({ pressed }) => [
                 styles.playerRow,
                 { backgroundColor: colors.surface, borderColor: colors.border },

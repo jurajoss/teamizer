@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next';
 import type { AuthenticatedApiClient } from '../api/authenticated-api-client';
 import type { PlayerDetail } from '../api/contracts';
 import { localizedErrorMessage } from '../i18n/localized-error';
+import { matchQueryKeys } from '../matches/match-query-keys';
 import { statisticsQueryKeys } from '../statistics/statistics-query-keys';
 import type { PreparedAvatar } from './avatar-picker';
 import { asyncContentState } from './player-admin';
@@ -38,6 +39,7 @@ export async function publishOwnProfile(
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: statisticsQueryKeys.root }),
     queryClient.invalidateQueries({ queryKey: profileQueryKeys.root }),
+    queryClient.invalidateQueries({ queryKey: matchQueryKeys.root }),
     refreshCurrentUser(),
   ]);
 }
@@ -50,12 +52,21 @@ export async function removeOwnAvatar(
   return apiClient.getPlayerDetail(playerId);
 }
 
+export function hasOwnProfileNameChanged(
+  savedName: string | undefined,
+  editedName: string,
+): boolean {
+  return savedName !== undefined && editedName.trim() !== savedName;
+}
+
 export function useProfileController({
   apiClient,
+  enabled = true,
   playerId,
   refreshCurrentUser,
 }: {
   apiClient: AuthenticatedApiClient;
+  enabled?: boolean;
   playerId: string | null;
   refreshCurrentUser(): Promise<void>;
 }) {
@@ -64,9 +75,10 @@ export function useProfileController({
   const [nameOverride, setNameOverride] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const profileQuery = useQuery({
-    queryKey: profileQueryKeys.current(playerId ?? 'invalid'),
+    queryKey: statisticsQueryKeys.player(playerId ?? 'invalid'),
     queryFn: () => apiClient.getPlayerDetail(playerId ?? ''),
-    enabled: playerId !== null,
+    enabled: enabled && playerId !== null,
+    staleTime: Number.POSITIVE_INFINITY,
   });
   const name = nameOverride ?? profileQuery.data?.name ?? '';
   const publish = (player: PlayerDetail) =>
@@ -94,7 +106,9 @@ export function useProfileController({
       await publish(player);
     },
   });
-  const mutationError = nameMutation.error ?? removeAvatarMutation.error;
+  const mutationError =
+    nameMutation.error ?? avatarMutation.error ?? removeAvatarMutation.error;
+  const nameDirty = hasOwnProfileNameChanged(profileQuery.data?.name, name);
 
   return {
     profileQuery,
@@ -104,6 +118,7 @@ export function useProfileController({
       profileQuery.data ? 1 : 0,
     ),
     name,
+    nameDirty,
     setName: setNameOverride,
     message,
     errorMessage: mutationError
@@ -111,6 +126,7 @@ export function useProfileController({
       : null,
     namePending: nameMutation.isPending,
     avatarPending: avatarMutation.isPending || removeAvatarMutation.isPending,
+    canSaveName: nameDirty && Boolean(name.trim()) && !nameMutation.isPending,
     saveName: () => nameMutation.mutate(),
     uploadAvatar: (file: PreparedAvatar) => avatarMutation.mutateAsync(file),
     removeAvatar: () => removeAvatarMutation.mutateAsync(),

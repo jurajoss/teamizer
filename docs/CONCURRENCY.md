@@ -296,13 +296,14 @@ history, live-sync metadata, or scorekeeper ownership field.
 
 ### Creation, mutation, and restoration
 
-1. `Start scoring` first loads Match detail. It must be IN_PROGRESS and contain
-   immutable final teams.
+1. Opening the canonical Match route first loads Match detail. It must be
+   IN_PROGRESS and contain immutable final teams before scoring initializes.
 2. If an ACTIVE/PENDING draft for the current user and Match already exists,
    restore it rather than silently replacing it. The UI may offer an explicit
-   discard-and-start-from-zero action.
+   discard-and-start-from-zero action for an invalid draft.
 3. Otherwise, create a V1 draft with zero scores and an explicit zero entry for
-   every final team member, then commit the SQLite row before enabling scoring.
+   every final team member, then commit the SQLite row before rendering score
+   controls. No separate Start-scoring action exists.
 4. Every `+1` or `−1` changes player total and its final team's score in the
    same SQLite transaction. Decrement never allows a value below zero.
 5. On foregrounding, navigation return, or restart, read and validate the

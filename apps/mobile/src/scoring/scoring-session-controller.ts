@@ -34,7 +34,6 @@ export function shouldInitializeScoringSession(
 }
 
 export type ScoringSessionNotice =
-  | { code: 'DRAFT_RESTORED' }
   | { code: 'COMPLETION_PENDING' }
   | { code: 'COMPLETION_UNCONFIRMED'; detail?: string };
 
@@ -49,7 +48,6 @@ export function scoringSessionIdentity(
 
 export type ScoringSessionState =
   | { status: 'LOADING' }
-  | { status: 'READY_TO_START'; match: MatchDetail }
   | {
       status: 'SCORING';
       match: MatchDetail;
@@ -153,7 +151,7 @@ export class ScoringSessionController {
         const stored = await this.repository.load(userId, match.id);
 
         if (stored.status === 'NOT_FOUND') {
-          this.setState({ status: 'READY_TO_START', match });
+          await this.createFreshDraft(userId, match);
           return;
         }
 
@@ -196,45 +194,12 @@ export class ScoringSessionController {
           notice:
             stored.draft.completion.state === 'PENDING'
               ? { code: 'COMPLETION_PENDING' }
-              : { code: 'DRAFT_RESTORED' },
+              : null,
         });
       } catch (error) {
         this.setState({
           status: 'BLOCKED',
           match,
-          draft: null,
-          message: this.persistenceMessage(error),
-        });
-      }
-    });
-  }
-
-  startScoring(): Promise<void> {
-    return this.enqueue(async () => {
-      const context = this.requireContext();
-
-      if (this.state.status !== 'READY_TO_START') {
-        return;
-      }
-
-      const draft = createLocalMatchDraft(
-        context.userId,
-        context.match,
-        this.now(),
-      );
-
-      try {
-        await this.repository.save(draft);
-        this.setState({
-          status: 'SCORING',
-          match: context.match,
-          draft,
-          notice: null,
-        });
-      } catch (error) {
-        this.setState({
-          status: 'BLOCKED',
-          match: context.match,
           draft: null,
           message: this.persistenceMessage(error),
         });
@@ -256,7 +221,7 @@ export class ScoringSessionController {
 
       try {
         await this.repository.delete(context.userId, context.match.id);
-        this.setState({ status: 'READY_TO_START', match: context.match });
+        await this.createFreshDraft(context.userId, context.match);
       } catch (error) {
         this.setState({
           status: 'BLOCKED',
@@ -319,6 +284,20 @@ export class ScoringSessionController {
           message: this.persistenceMessage(error),
         });
       }
+    });
+  }
+
+  private async createFreshDraft(
+    userId: string,
+    match: MatchDetail,
+  ): Promise<void> {
+    const draft = createLocalMatchDraft(userId, match, this.now());
+    await this.repository.save(draft);
+    this.setState({
+      status: 'SCORING',
+      match,
+      draft,
+      notice: null,
     });
   }
 

@@ -196,16 +196,11 @@ export class MatchesService {
   }
 
   async upcoming(callerPlayerId: string): Promise<UpcomingMatchSummaryDto[]> {
-    const now = new Date();
     const matches = await this.prisma.match.findMany({
       where: {
-        OR: [
-          { status: MatchStatus.IN_PROGRESS },
-          {
-            status: MatchStatus.OPEN_FOR_REGISTRATION,
-            startsAt: { gte: now },
-          },
-        ],
+        status: {
+          in: [MatchStatus.OPEN_FOR_REGISTRATION, MatchStatus.IN_PROGRESS],
+        },
       },
       select: {
         id: true,

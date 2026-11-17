@@ -210,11 +210,25 @@ describeWithDatabase('Player statistics, rankings, and history API', () => {
       winRate: null,
       goals: 0,
       goalsPerMatch: null,
+      attendance: {
+        playedMatches: 0,
+        totalMatches: 0,
+        percentage: null,
+      },
     });
     expect(detail.body).toMatchObject({
       id: player.id,
       name: 'No Matches',
-      statistics: { matches: 0, winRate: null, goalsPerMatch: null },
+      statistics: {
+        matches: 0,
+        winRate: null,
+        goalsPerMatch: null,
+        attendance: {
+          playedMatches: 0,
+          totalMatches: 0,
+          percentage: null,
+        },
+      },
     });
     const serialized = JSON.stringify([statistics.body, detail.body]);
     expect(serialized).not.toContain('authProviderId');
@@ -246,10 +260,22 @@ describeWithDatabase('Player statistics, rankings, and history API', () => {
       score: { teamA: 0, teamB: 3 },
     });
 
+    const authorization = authorize('summary-token', caller.authProviderId);
     const response = await request(app.getHttpServer())
       .get(`/players/${subject.id}/statistics`)
-      .set('Authorization', authorize('summary-token', caller.authProviderId))
+      .set('Authorization', authorization)
       .expect(200);
+    const detail = await request(app.getHttpServer())
+      .get(`/players/${subject.id}`)
+      .set('Authorization', authorization)
+      .expect(200);
+    const rankings = await request(app.getHttpServer())
+      .get('/rankings?limit=100')
+      .set('Authorization', authorization)
+      .expect(200);
+    const rankingStatistics = rankings.body.items.find(
+      (row: { player: { id: string } }) => row.player.id === subject.id,
+    )?.statistics;
 
     expect(response.body).toEqual({
       playerId: subject.id,
@@ -260,6 +286,23 @@ describeWithDatabase('Player statistics, rankings, and history API', () => {
       winRate: 0.3333,
       goals: 2,
       goalsPerMatch: 0.6667,
+      attendance: {
+        playedMatches: 3,
+        totalMatches: 3,
+        percentage: 100,
+      },
+    });
+    expect(detail.body.statistics).toMatchObject({
+      draws: 1,
+      losses: 1,
+      winRate: 0.3333,
+      wins: 1,
+    });
+    expect(rankingStatistics).toMatchObject({
+      draws: 1,
+      losses: 1,
+      winRate: 0.3333,
+      wins: 1,
     });
   });
 
@@ -286,7 +329,82 @@ describeWithDatabase('Player statistics, rankings, and history API', () => {
       .set('Authorization', authorize('states-token', caller.authProviderId))
       .expect(200);
 
-    expect(response.body).toMatchObject({ matches: 0, goals: 0 });
+    expect(response.body).toMatchObject({
+      matches: 0,
+      goals: 0,
+      attendance: {
+        playedMatches: 0,
+        totalMatches: 0,
+        percentage: null,
+      },
+    });
+  });
+
+  it('shares full-history attendance across Player statistics, detail, and Rankings', async () => {
+    const caller = await createUser();
+    const subject = await createPlayer('Partial Attendance');
+    const everyMatch = await createPlayer('Every Match');
+    const zeroAttendance = await createPlayer('Zero Attendance');
+    const opponent = await createPlayer('Historical Opponent', {
+      status: PlayerStatus.INACTIVE,
+    });
+    await recordMatch({
+      teamA: [everyMatch.id],
+      teamB: [opponent.id],
+      startsAt: new Date('2020-01-01T18:00:00.000Z'),
+    });
+    await recordMatch({
+      teamA: [subject.id],
+      teamB: [everyMatch.id],
+    });
+    await recordMatch({
+      teamA: [everyMatch.id],
+      teamB: [subject.id],
+    });
+    const authorization = authorize('attendance-token', caller.authProviderId);
+
+    const statistics = await request(app.getHttpServer())
+      .get(`/players/${subject.id}/statistics`)
+      .set('Authorization', authorization)
+      .expect(200);
+    const detail = await request(app.getHttpServer())
+      .get(`/players/${subject.id}`)
+      .set('Authorization', authorization)
+      .expect(200);
+    const rankings = await request(app.getHttpServer())
+      .get('/rankings?limit=100')
+      .set('Authorization', authorization)
+      .expect(200);
+    const attendanceByPlayer = new Map(
+      rankings.body.items.map(
+        (row: {
+          player: { id: string };
+          statistics: { attendance: unknown };
+        }) => [row.player.id, row.statistics.attendance],
+      ),
+    );
+
+    expect(statistics.body.attendance).toEqual({
+      playedMatches: 2,
+      totalMatches: 3,
+      percentage: 67,
+    });
+    expect(detail.body.statistics.attendance).toEqual(
+      statistics.body.attendance,
+    );
+    expect(attendanceByPlayer.get(subject.id)).toEqual(
+      statistics.body.attendance,
+    );
+    expect(attendanceByPlayer.get(everyMatch.id)).toEqual({
+      playedMatches: 3,
+      totalMatches: 3,
+      percentage: 100,
+    });
+    expect(attendanceByPlayer.get(zeroAttendance.id)).toEqual({
+      playedMatches: 0,
+      totalMatches: 3,
+      percentage: 0,
+    });
   });
 
   it('includes active guests and excludes inactive Players by default while preserving their history', async () => {

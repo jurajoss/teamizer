@@ -52,7 +52,7 @@ describe('Match query updates', () => {
     ]);
   });
 
-  it('publishes authoritative Start to detail and the cached home summary', async () => {
+  it('publishes authoritative Start so the canonical route enters scoring directly', async () => {
     const queryClient = new QueryClient();
     queryClient.setQueryData(matchQueryKeys.upcoming, [upcomingMatch]);
     const match = matchDetail({ status: 'IN_PROGRESS', stateVersion: 4 });
@@ -93,7 +93,7 @@ describe('Match query updates', () => {
     ]);
   });
 
-  it('invalidates derived statistics only after authoritative completion', async () => {
+  it('invalidates the finished list and derived statistics after completion', async () => {
     const queryClient = {
       invalidateQueries: vi.fn().mockResolvedValue(undefined),
       setQueryData: vi.fn(),
@@ -106,6 +106,7 @@ describe('Match query updates', () => {
 
     expect(queryClient.invalidateQueries.mock.calls).toEqual([
       [{ queryKey: matchQueryKeys.upcoming, refetchType: 'active' }],
+      [{ queryKey: matchQueryKeys.finished, refetchType: 'active' }],
       [{ queryKey: statisticsQueryKeys.root, refetchType: 'active' }],
     ]);
   });

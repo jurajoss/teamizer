@@ -1,13 +1,12 @@
 import type { TeamizerIconName } from '../ui/icons/app-icon-map';
 
-export type PrimaryDestinationKey =
-  'home' | 'matches' | 'players' | 'statistics';
+export type PrimaryDestinationKey = 'home' | 'matches' | 'rankings';
 
 export type PrimaryDestination = {
-  href: '/home' | '/matches' | '/players' | '/statistics';
+  href: '/home' | '/matches' | '/rankings';
   icon: TeamizerIconName;
   key: PrimaryDestinationKey;
-  labelKey: 'nav.home' | 'nav.matches' | 'nav.players' | 'nav.statistics';
+  labelKey: 'nav.home' | 'nav.matches' | 'nav.rankings';
 };
 
 export const primaryDestinations: readonly PrimaryDestination[] = [
@@ -19,16 +18,10 @@ export const primaryDestinations: readonly PrimaryDestination[] = [
     labelKey: 'nav.matches',
   },
   {
-    key: 'players',
-    href: '/players',
-    icon: 'players',
-    labelKey: 'nav.players',
-  },
-  {
-    key: 'statistics',
-    href: '/statistics',
-    icon: 'statistics',
-    labelKey: 'nav.statistics',
+    key: 'rankings',
+    href: '/rankings',
+    icon: 'rankings',
+    labelKey: 'nav.rankings',
   },
 ] as const;
 
@@ -74,15 +67,30 @@ export function authenticatedShellPresentation(
   };
 }
 
+export function authenticatedShellPresentationForPath(
+  mode: 'phone' | 'tablet',
+  pathname: string,
+): AuthenticatedShellPresentation {
+  return authenticatedShellPresentation(mode, !isPrimaryRootPath(pathname));
+}
+
 export function activePrimaryDestination(
   pathname: string,
 ): PrimaryDestinationKey | null {
   const normalized = normalizePathname(pathname);
   if (normalized === '/home') return 'home';
   if (isPathWithin(normalized, '/matches')) return 'matches';
-  if (isPathWithin(normalized, '/players')) return 'players';
-  if (normalized === '/statistics') return 'statistics';
+  if (normalized === '/rankings') return 'rankings';
   return null;
+}
+
+export function initialPrimaryDestination(
+  pathname: string,
+): PrimaryDestinationKey {
+  return (
+    activePrimaryDestination(pathname) ??
+    (normalizePathname(pathname).startsWith('/players/') ? 'rankings' : 'home')
+  );
 }
 
 export function primaryNavigationTarget(

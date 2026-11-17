@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -10,8 +10,6 @@ import type { MatchDetail, TeamProposal } from '../api/contracts';
 import {
   createTransientProposal,
   isStaleProposalConflict,
-  movePlayer,
-  swapPlayers,
   validateProposal,
   type TransientTeamProposal,
 } from './match-flow';
@@ -22,6 +20,12 @@ import {
   publishMatchState,
   refreshMatchState,
 } from './match-query-keys';
+import {
+  createTeamDraft,
+  isTeamDraftValidForMatch,
+  isTeamDraftStale,
+  useTeamDraft,
+} from './team-draft-store';
 
 type ProposalApi = Pick<
   AuthenticatedApiClient,
@@ -35,6 +39,8 @@ export type GeneratedProposalResult =
       proposal: TransientTeamProposal;
     }
   | { status: 'STALE'; match: MatchDetail };
+
+type GenerationIntent = 'INITIAL' | 'REPLACE';
 
 export async function resolveGeneratedProposal(
   apiClient: ProposalApi,
@@ -51,6 +57,14 @@ export async function resolveGeneratedProposal(
     match: currentMatch,
     proposal: createTransientProposal(currentMatch, response),
   };
+}
+
+export async function generateLocalProposal(
+  apiClient: ProposalApi,
+  match: MatchDetail,
+): Promise<GeneratedProposalResult> {
+  const response = await apiClient.generateTeams(match.id);
+  return resolveGeneratedProposal(apiClient, match, response);
 }
 
 export async function startMatchWithProposal(
@@ -76,47 +90,59 @@ export async function startMatchWithProposal(
 
 export function useMatchProposal({
   apiClient,
+  enabled,
   match,
   setFeedback,
 }: {
   apiClient: AuthenticatedApiClient;
+  enabled: boolean;
   match: MatchDetail;
   setFeedback: SetOpenMatchFeedback;
 }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const [proposal, setProposal] = useState<TransientTeamProposal | null>(null);
-  const [selectedSwapPlayerId, setSelectedSwapPlayerId] = useState<
-    string | null
-  >(null);
+  const proposal = useTeamDraft(
+    (state) => state.draftsByMatchId[match.id] ?? null,
+  );
+  const setDraft = useTeamDraft((state) => state.setDraft);
+  const markStale = useTeamDraft((state) => state.markStale);
+  const clearDraft = useTeamDraft((state) => state.clearDraft);
   const [confirmingStart, setConfirmingStart] = useState(false);
-
-  const invalidate = useCallback(() => {
-    setProposal(null);
-    setSelectedSwapPlayerId(null);
-    setConfirmingStart(false);
-  }, []);
+  const initialAttemptKey = useRef<string | null>(null);
+  const currentParticipantIds = match.participants.going.map(({ id }) => id);
+  const stale = proposal
+    ? isTeamDraftStale(proposal, currentParticipantIds)
+    : false;
 
   const generationMutation = useMutation({
-    mutationFn: () => apiClient.generateTeams(match.id),
-    onSuccess: async (response) => {
+    mutationFn: async (intent: GenerationIntent) => ({
+      intent,
+      result: await generateLocalProposal(apiClient, match),
+    }),
+    onSuccess: ({ intent, result }) => {
       try {
-        const result = await resolveGeneratedProposal(
-          apiClient,
-          match,
-          response,
-        );
         queryClient.setQueryData(matchQueryKeys.detail(match.id), result.match);
 
         if (result.status === 'STALE') {
-          throw new Error(t('teams.regenerateHint'));
+          if (proposal) markStale(match.id);
+          setFeedback({
+            tone: 'warning',
+            title: t('teams.staleTitle'),
+            text: t('teams.staleHint'),
+          });
+          return;
         }
 
-        setProposal(result.proposal);
-        setSelectedSwapPlayerId(null);
-        setFeedback({ tone: 'success', text: t('teams.proposalReady') });
+        setDraft(
+          match.id,
+          createTeamDraft(
+            result.proposal,
+            result.match.participants.going.map(({ id }) => id),
+          ),
+        );
+        setConfirmingStart(false);
+        if (intent === 'REPLACE') setFeedback(null);
       } catch {
-        invalidate();
         setFeedback({
           tone: 'error',
           title: t('teams.proposalRejected'),
@@ -128,19 +154,25 @@ export function useMatchProposal({
       setFeedback(openMatchErrorFeedback(error, t('teams.failed'), t)),
   });
   const startMutation = useMutation({
-    mutationFn: () => startMatchWithProposal(apiClient, match, proposal),
+    mutationFn: () => {
+      if (!proposal || !isTeamDraftValidForMatch(proposal, match)) {
+        throw new Error('The local team draft is stale or invalid.');
+      }
+      return startMatchWithProposal(apiClient, match, proposal);
+    },
     onSuccess: async (startedMatch) => {
-      invalidate();
+      clearDraft(match.id);
+      setConfirmingStart(false);
       await publishMatchState(queryClient, startedMatch);
     },
     onError: async (error) => {
       setConfirmingStart(false);
       if (error instanceof ApiClientError && isStaleProposalConflict(error)) {
-        invalidate();
+        markStale(match.id);
         setFeedback({
           tone: 'warning',
-          title: t('teams.regenerateTitle'),
-          text: t('teams.regenerateHint'),
+          title: t('teams.staleTitle'),
+          text: t('teams.staleHint'),
         });
         await refreshMatchState(queryClient, match.id);
         return;
@@ -149,39 +181,41 @@ export function useMatchProposal({
     },
   });
 
-  const move = (playerId: string) => {
-    setProposal((current) =>
-      current ? movePlayer(current, playerId) : current,
-    );
-    setSelectedSwapPlayerId(null);
-    setConfirmingStart(false);
-  };
-
-  const selectSwap = (playerId: string) => {
-    if (!selectedSwapPlayerId) {
-      setSelectedSwapPlayerId(playerId);
+  useEffect(() => {
+    const attemptKey = `${match.id}:${match.stateVersion}`;
+    const mayGenerate =
+      enabled &&
+      match.status === 'OPEN_FOR_REGISTRATION' &&
+      match.participants.going.length >= 2;
+    if (
+      proposal ||
+      !mayGenerate ||
+      generationMutation.isPending ||
+      initialAttemptKey.current === attemptKey
+    ) {
       return;
     }
 
-    setProposal((current) =>
-      current ? swapPlayers(current, selectedSwapPlayerId, playerId) : current,
-    );
-    setSelectedSwapPlayerId(null);
-    setConfirmingStart(false);
-  };
+    initialAttemptKey.current = attemptKey;
+    generationMutation.mutate('INITIAL');
+  }, [enabled, generationMutation, match, proposal]);
+
+  const dismissStartConfirmation = useCallback(
+    () => setConfirmingStart(false),
+    [],
+  );
 
   return {
     proposal,
-    selectedSwapPlayerId,
+    stale,
     confirmingStart,
     generationPending: generationMutation.isPending,
     startPending: startMutation.isPending,
-    generate: () => generationMutation.mutate(),
+    generate: () => generationMutation.mutate('REPLACE'),
     start: () => startMutation.mutate(),
     beginStartConfirmation: () => setConfirmingStart(true),
-    cancelStartConfirmation: () => setConfirmingStart(false),
-    invalidate,
-    move,
-    selectSwap,
+    cancelStartConfirmation: dismissStartConfirmation,
+    handleAuthoritativeChange: dismissStartConfirmation,
+    clear: () => clearDraft(match.id),
   };
 }

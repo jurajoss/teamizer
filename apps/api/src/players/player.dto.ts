@@ -176,6 +176,13 @@ export type PlayerStatisticsSummaryDto = {
   winRate: number | null;
   goals: number;
   goalsPerMatch: number | null;
+  attendance: AttendanceStatsDto;
+};
+
+export type AttendanceStatsDto = {
+  playedMatches: number;
+  totalMatches: number;
+  percentage: number | null;
 };
 
 export type PlayerStatisticsDto = PlayerStatisticsSummaryDto & {
@@ -186,8 +193,18 @@ export type PlayerDetailDto = PlayerPublicDto & {
   statistics: PlayerStatisticsSummaryDto;
 };
 
+export type AdminPlayerAccountDto =
+  | { state: 'UNLINKED' }
+  | {
+      state: 'INVITED';
+      email: string;
+      invitationStatus: 'PENDING' | 'SENT';
+    }
+  | { state: 'REGISTERED' };
+
 export type AdminPlayerDetailDto = PlayerDetailDto & {
   attributes: PlayerAttributesDto;
+  account: AdminPlayerAccountDto;
 };
 
 export type PlayersPageDto = {

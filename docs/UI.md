@@ -159,18 +159,35 @@ do not add a second icon package or scatter raw glyphs through new UI.
   while content is capped instead of stretched. Forms remain capped at 460 px.
 - Every route is safe-area-aware on all four edges and supports vertical
   scrolling where content or text scaling can exceed the viewport.
-- Authenticated routes use one shared Expo Router stack and four canonical
-  primary roots: `/home`, `/matches`, `/players`, and `/statistics`. On phone,
-  the shell renders these as persistent bottom navigation. At the shared 700 px
-  tablet breakpoint, the same destination definitions become a persistent,
-  intentionally composed left sidebar. Routes, screens, authorization, and
-  active-state semantics are shared; there are no phone/tablet route copies.
-- Primary roots have a centered localized title, no Back action, and the
-  current Player avatar at the trailing edge. Nested routes such as
-  `/matches/:matchId` and `/players/:playerId` keep an accessible Back action,
-  a concise native-centered title, and the account trigger. Native stack
-  centering avoids arbitrary padding and preserves Android alignment. Platform
-  gestures and Android system Back remain available.
+- Authenticated routes use one shared Expo Router stack and three canonical
+  primary roots: `/home`, `/matches`, and `/rankings`. On phone,
+  the shell renders bottom navigation only on those exact roots. At the shared
+  700 px tablet breakpoint, the same destination definitions become an
+  intentionally composed left sidebar, again only on the roots. Every nested
+  route hides primary chrome and regains its physical bottom/left safe areas.
+  Routes, screens, authorization, and active-state semantics are shared; there
+  are no phone/tablet route copies.
+- Primary roots use native-stack headers with no Back action, the current Player
+  avatar at the leading edge, and an optional contextual trailing action.
+  Home's native title is the `Teamizer` brand while its localized personalized
+  greeting remains the first content block; its primary-navigation label stays
+  localized as Home. Matches exposes the ADMIN-only Create Match action in the
+  native trailing toolbar, and Rankings has no trailing action.
+- Nested routes such as `/matches/:matchId`, `/players/:playerId`, and
+  selected-Player history use the native platform Back item, a concise title,
+  and permission-aware contextual actions only. They never repeat the global
+  account avatar. Native iOS titles are centered while Android follows its
+  leading-aligned platform convention. Native swipe/system Back behavior
+  remains available.
+- Native-stack appearance follows Teamizer's resolved light/dark preference,
+  including when it differs from the system preference. On iOS, contextual
+  header actions are plain native toolbar items, allowing the operating system
+  to own their foreground color, background, grouping, and interaction
+  treatment; the custom root account avatar opts out of shared iOS 26
+  backgrounds. Android hosts restrained transparent Teamizer icon actions with
+  the active theme's ordinary foreground color in its native stack toolbar.
+  Direct nested entry receives a focused custom fallback only when no native
+  Back history exists.
 - Primary-destination changes use Expo Router pop-to/replace semantics, so they
   do not build synthetic Back history. Detail screens use normal stack pushes;
   direct nested entry has a canonical primary-area Back fallback.
@@ -184,16 +201,21 @@ do not add a second icon package or scatter raw glyphs through new UI.
 
 ### Account menu and Settings
 
-The header avatar opens a compact, tablet-bounded modal account sheet. It uses
-the existing Player avatar or deterministic initials, display name, and useful
-role/status context without showing ratings or Firebase identifiers. My
-profile, Settings, and ADMIN-only Administration are normal navigation actions;
-Sign out is visually separated as the destructive action. These destinations
+The header avatar opens a compact, content-sized, tablet-bounded modal account
+sheet. It uses the existing Player avatar or deterministic initials and display
+name without exposing ratings, role/status badges, or Firebase identifiers. My
+profile, Settings, and ADMIN-only Administration are compact navigation rows.
+My profile opens the authenticated Player's existing statistics/profile route
+directly from the session Player ID; it never resolves identity through
+Rankings. Repeated entry uses navigation-to-existing semantics rather than
+stacking duplicate profile screens;
+Sign out is visually separated as the destructive row. These destinations
 remain outside primary bottom/sidebar navigation, and sign out does not occupy
 permanent header space.
 
-Settings is an authenticated route. Clear choice buttons offer System, Light,
-and Dark appearance plus Čeština and English language. The selected option
+Settings is an authenticated route with two compact cards. Shared segmented
+controls offer System, Light, and Dark appearance plus Čeština and English
+language without redundant introduction or helper copy. The selected option
 remains explicit. Both choices persist through AsyncStorage. On the first run,
 language is inferred from the system locale when it is Czech and otherwise
 falls back to English.
@@ -230,33 +252,85 @@ is not present.
 
 ### Authenticated home
 
-The home is intentionally focused: compact branded header, an authoritative
-`IN_PROGRESS` Match before any future OPEN Match, caller-relative attendance,
-one compact player identity surface, semantic account/player status, and a
-compact route into statistics. The primary Match remains prominent while
-routine explanatory copy and vertical gaps are reduced. Active Matches remain
-present regardless of their scheduled time. Overdue OPEN Matches are not
-promoted as upcoming and are not auto-cancelled. Loading, empty, and retry
-states use the same shared primitives.
+Home is the first general dashboard composition. Its native root header keeps
+the account avatar as the persistent Profile, Settings, Administration (ADMIN),
+and sign-out entry point; the personalized greeting remains ordinary content.
+The authoritative `IN_PROGRESS` Match remains ahead of OPEN Matches. All OPEN
+Matches remain eligible regardless of scheduled time, with the earliest
+scheduled one selected deterministically; overdue OPEN Matches are neither
+hidden nor auto-transitioned.
+The Match summary combines the existing upcoming response with Match detail for
+real attendee avatars/counts, and reuses the established attendance endpoints.
+Unanswered attendance exposes Going/Not going choices; a saved decision becomes
+a compact bordered state-and-Edit row while registration remains open. Match
+Detail reuses the same shared attendance control and state presentation.
+
+The dashboard shows only the current Player's existing statistics summary
+(win rate, goals per Match, Matches) and aggregate goals from their newest ten
+finished-Match history rows. Goal history is reordered chronologically for a
+semantic-token line/area chart and is never padded with fabricated Matches.
+Phone stacks the same sections; tablet composes the Match and dashboard as two
+bounded columns. Home does not infer live server scoring. Opening its
+authoritative in-progress Match enters the existing device-local scoring
+workflow directly through the canonical Match route. Loading, empty, and retry
+states use the same shared primitives in both themes.
+
+### Matches index
+
+The Matches primary root is a dense, scannable list rather than a dashboard.
+One segmented control switches between All, Upcoming, and Finished without
+changing routes. All groups the same reusable compact rows under explicit
+Upcoming and Finished headings. Rows show a Prague-local weekday/date block,
+real participant avatars with bounded `+N` overflow, and a trailing detail
+chevron; repeated time and location stay in Match Detail.
+
+Upcoming rows show a compact Going or Not going state only after the current
+Player has answered. Finished rows keep the score colon on one fixed axis,
+independent of avatar overflow or score digits. A fixed compact indicator before
+the score represents the personal persisted result: green up triangle for Win,
+red down triangle for Loss, neutral right triangle for Draw, and a neutral dash
+for Did not play. The row's localized accessibility label communicates the
+semantic result without relying on glyph direction or color. Phone and tablet
+share the same components and filters, while the readable content cap prevents
+rows from stretching across the full tablet canvas. The same ordered,
+de-duplicated participants from both persisted teams feed the shared avatar
+stack on Matches, Player statistics, and complete Player history; the shared
+responsive visible limit determines whether the stack renders `+N`. The shared root header
+retains account-menu behavior and adds Match creation only for ADMIN users.
 
 ### Profile and Player administration
 
-The authenticated Profile route presents the permanent Player identity,
-avatar, ACTIVE/inactive state, editable display name, and a compact public
-finished-Match summary. A normal Player never sees balancing attributes. Photo
-actions use explicit Choose, Take, and Remove controls; the avatar itself is not
-a hidden or undersized action.
+The **Player Profile** screen (implemented by the existing Player Statistics
+route and data model) is the canonical Player profile. Home's My statistics and
+My goals headers and the account menu's My profile row open the authenticated
+Player directly from session identity, while Rankings opens the selected
+Player. The shared nested route retains the primary destination that launched
+it. Its native edit action shares the Matches create-action treatment, sits at
+the trailing edge of the native navigation header, and is visible only to the
+owner or an ADMIN. As on every nested route, the global account avatar is not
+repeated there.
+
+One shared edit route handles self and administrative editing. Both modes reuse
+the existing display-name and avatar upload/removal flows, disable Save changes
+until identity fields are dirty, warn before discarding unsaved form changes,
+and invalidate statistics, profile, Match, and current-session identity caches
+after mutation. A normal Player can edit only their own public name and photo
+and never receives balancing attributes or account-management data. Photo
+actions remain explicit Choose, Take, and Remove controls; the avatar itself is
+not a hidden or undersized action.
 
 The ADMIN Player list is a phone-first vertical identity list with avatar,
 regular/guest account-linkage language, ACTIVE/inactive status, lightweight
-name-prefix search, and simple status filters. Player detail keeps public name
-editing, the five ADMIN-only bounded rating steppers, avatar management, guest
-invitation, and status management in distinct sections. For a Guest, the
+name-prefix search, and simple status filters. Its rows open the same shared
+edit route, which adds the five ADMIN-only bounded rating steppers, avatar
+management, guest invitation, and status management. For an unlinked Guest, the
 primary account action is a localized email field plus **Invite as user**.
 Loading prevents duplicate taps; invalid email is inline; success and stable API
 failures use one banner. **Advanced options** reveals the existing Firebase UID
-link as a secondary action. Neither account control is rendered for a regular
-Player or non-ADMIN. Deactivation is
+link as a secondary action. A pending invitation shows its email and the
+backend-supported resend action; account controls disappear once the Player is
+linked. Neither account control is rendered for a regular Player or non-ADMIN.
+Deactivation is
 visually separated, requires confirmation, and explains that Player ID and
 history remain; there is no hard-delete affordance.
 
@@ -264,25 +338,57 @@ Avatar-bearing identity rows always retain the textual Player name and guest or
 status label where relevant. The shared initials fallback is deterministic, so
 missing or failed images preserve both identification and layout.
 
-### Statistics and Player history
+### Rankings and Player history
 
-The ranking is a phone-first vertical list rather than a compressed data table.
-Each row is one comfortable touch target with an explicit rank, Player identity,
-guest label when applicable, and the approved scannable metrics. Server order is
-preserved; the mobile app formats but never recalculates authoritative rank.
+The `/rankings` primary route is presented as **Rankings** / **Žebříčky**. A
+three-part selector switches between win rate, goals per Match, and
+participation (attendance percentage across all FINISHED Matches).
+The client retrieves every ranking page before sorting, so the selected
+criterion applies to the full active-Player population rather than only the
+currently visible page. Persistent Guests remain in the same ranking.
 
-Player detail uses the same stack header, status pills, surfaces, and number
-hierarchy as the Match flow. A compact wrapping metric grid adapts from phone to
-tablet without fixed columns. Zero-Match win rate and goals per Match are shown
-as `N/A`, not zero.
+The ranking is a phone-first vertical list rather than a compressed data
+table. Each compact row is one comfortable touch target with a fixed rank area,
+Player avatar and name, subtle Guest metadata, exactly one selected statistic,
+and a trailing detail affordance. The leading three rows use small
+gold/silver/bronze trophy silhouettes with the numeric rank centered inside;
+remaining rows use plain ranks. Rank and statistic regions stay aligned as
+values and names vary. Win rate uses one decimal where needed, goals per Match
+uses two decimals, and participation displays the integer percentage with
+played/total counts directly beneath it. The win-rate view uses the same
+secondary row for the Player's win/draw/loss counts, with the result semantics
+and colors shared by Player Statistics. When no FINISHED Matches exist its
+percentage is a neutral dash while all three result counts remain visible at
+zero; changing the selector recalculates the displayed order and top-three
+treatment deterministically.
 
-Finished-Match history lives within Player detail and uses load-more pagination.
-Every result shows text-labelled outcome, final score, both final teams,
-participating Players, and aggregate goal totals. Team lists stack on phone and
-form two columns from the 700 px tablet breakpoint. A secondary action opens the
-existing full FINISHED Match presentation, avoiding a competing result route.
-Ranking and history provide intentional loading, empty, error/retry, and success
-states.
+Every Rankings row opens the selected Player's statistics detail, regardless of
+the active criterion; Home and My profile open the same screen for the current
+Player without a Rankings request. The nested screen uses the native platform
+title alignment, Back action, and only its permission-aware Edit action. Its
+profile hero shows the selected Player identity and real finished-Match count.
+A two-by-two card grid presents the existing win rate and W/D/L totals,
+authoritative full-history attendance, combined total/per-Match goals, and
+recent wins as a ratio plus a
+chronological result bar from up to the five newest Player Matches. Recent wins
+reuse the selected Player's existing finished-Match history response. Attendance
+comes from the Player detail statistics summary, is not inferred on the client,
+and does not introduce another API request.
+
+The selected Player's existing history endpoint also drives a shared goal chart
+for the latest ten finished Matches, ordered chronologically, and five newest
+result rows. Those rows reuse the same visual component as the main Matches
+list: compact date block, bounded team avatar stack, personal-result indicator,
+fixed structured score, explicit personal goal count (including zero), and
+chevron. A nonparticipant never receives a fabricated goal count. The entire
+recent-Matches section header is one accessible chevron action that opens
+the canonical `/matches` primary destination in its normal All view. The
+dedicated `/players/:playerId/matches` cursor-paginated route remains available,
+but is no longer this section's destination. Both history surfaces link to the
+canonical finished Match detail and provide intentional loading, empty,
+error/retry, and success states. There is no standalone Players primary
+destination. Player statistics is entered from Home, the account menu, or
+Rankings, while ADMIN Player management opens the shared editor directly.
 
 ### Loading and recoverable errors
 
@@ -323,13 +429,55 @@ language. Feedback does not rely on color alone.
 
 The implemented core Match flow follows these interaction requirements:
 
-- Registration shows date/time, location, GOING, NOT_GOING, unanswered, guests,
-  and one clear team-generation action while respecting authorization.
-- Team proposals show two labelled sides, players, balance information,
-  regenerate, manual adjustment, and a separated Start action. Regeneration
-  replaces the current client proposal; there is no proposal history.
-- An IN_PROGRESS Match shows immutable persisted teams and a primary `Start
-  scoring` action. It never implies scorekeeper ownership or transfer.
+- Pre-start Match Detail uses the shared native Match header, followed by real
+  date/time/location, compact editable personal attendance, visible Going and
+  Not-going groups, one Teams card, and a separate primary Start action. The
+  Participants card is the same compact read-only summary for Players and
+  ADMINs. Guest creation remains available there, while an ADMIN-only Edit
+  participants action opens a dedicated searchable, cursor-paginated workflow
+  with Going, Not-going, and Unanswered groups plus immediate attendance
+  persistence. Existing persistent Guest Players participate in that workflow
+  by Player ID. The current API supports Unanswered to Going/Not-going and
+  Going/Not-going changes, but only a Player may remove their own registration;
+  the ADMIN editor therefore truthfully disables returning another Player to
+  Unanswered. Unanswered Players retain their domain state but are not rendered
+  as a third group on Match Detail. Start remains a two-step transition: its
+  amber information panel explains that attendance and teams will lock while
+  scoring starts separately, followed by full-width Keep editing and Start
+  match actions. The separate destructive Cancel match action remains below.
+- Team proposals are created automatically for the current Going Players and
+  live in a non-persisted, Match-keyed Zustand draft. The Teams card keeps both
+  sides and the equal Regenerate/Edit text actions together for every active
+  Player. Returning
+  to the Match reuses the exact generated or manually adjusted draft. A
+  participant-set change preserves the old proposal, shows an attendance-change
+  warning, changes regeneration to Update teams, and disables Start.
+- Edit teams is a dedicated two-column screen. A short hold activates dragging;
+  cross-team Player drops swap atomically, while an odd roster exposes only a
+  Player-tile-sized valid empty slot for moving the extra Player. Tap-select plus
+  cross-team tap provides the same operation without relying on drag visuals.
+  Editor changes remain temporary until Apply distribution. The editor refreshes
+  a stale proposal receipt without applying or silently deleting the old draft.
+- The canonical Match route maps OPEN to pre-match detail, IN_PROGRESS directly
+  to scoring, FINISHED to immutable result detail, and CANCELLED to its existing
+  read-only state. Home, Matches, notifications, and deep links all use this
+  route. After confirmed Start succeeds, the authoritative IN_PROGRESS response
+  enters scoring without another action; a failed Start remains on pre-match
+  detail.
+- Finished Match Detail reuses the pre-match detail header, Match information,
+  and Teams presentation. One read-only result card centers large standalone
+  Team A and Team B score numbers in their semantic colors around a colon,
+  directly above the same two-column player tiles used before Start. Generic
+  team labels and score-panel surfaces are omitted. Each player tile adds a
+  secondary aggregate goal count below a single-line, ellipsized name; zero
+  goals remain visible and tile heights stay aligned. The tile surface, border,
+  avatar, spacing, and responsive geometry remain shared with the pre-match
+  Teams card.
+- Scoring initialization restores an existing valid local draft or durably
+  writes a new 0:0 draft before score controls appear. Normal initialization,
+  restoration, and local persistence are silent; only actionable persistence or
+  completion warnings interrupt scoring. Corrupt/stale drafts, terminal-state
+  cleanup, and first-completion-wins safeguards remain unchanged.
 - Active scoring is the first fully migrated Phase 4 feature screen. The shared
   native header is its only Match identity; no date/location subtitle consumes
   the live-scoring canvas. The compact semantic Team A/Team B score is the first
@@ -352,17 +500,20 @@ The implemented core Match flow follows these interaction requirements:
   goal/score text. An uneven roster keeps an invisible, noninteractive layout
   slot opposite each unmatched Player so the paired columns stay aligned.
   Local goal entry never displays network loading.
-- Active scoring temporarily suppresses authenticated primary chrome through
-  the shell visibility contract, so it has no phone bottom navigation or tablet
-  sidebar and regains physical-edge safe areas. The native Match header and
-  Back/direct-entry behavior remain shared. The completion action stays in
-  scroll content, uses the shared `Button`, and retains the existing irreversible
-  confirmation, pending retry, idempotency, and conflict behavior.
+- All Match detail, editing, and scoring routes are nested and therefore have
+  no phone bottom navigation or tablet sidebar. They regain physical-edge safe
+  areas through the root-route shell policy. The native Match header and
+  Back/direct-entry behavior remain shared across lifecycle states. The
+  full-width completion action
+  stays in scroll content and uses the shared `Button`. Its confirmation matches
+  Start: an amber panel shows the dynamic final score above vertically stacked,
+  full-width Continue match and Confirm result actions. Pending retry,
+  idempotency, and conflict behavior remain unchanged.
 - Local persistence failure blocks scoring with explicit error feedback.
 - Completion is confirmed as irreversible. A 409 completion conflict closes or
   discards the losing local result as defined by the concurrency design.
-- Finished detail shows final teams, score, and aggregate player goals without
-  attributing individual goals to a team. Rankings follow `PRODUCT.md`.
+- Finished detail shows the authoritative final teams, score, and aggregate
+  player goal totals in its read-only result card. Rankings follow `PRODUCT.md`.
 
 Every major screen supplies intentional loading, empty, error, and success
 states using the established primitives. Exceptions such as instant local goal

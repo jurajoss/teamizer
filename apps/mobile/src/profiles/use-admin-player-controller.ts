@@ -106,6 +106,32 @@ export function convertGuestPlayer(
   return apiClient.convertGuest(playerId, authProviderId);
 }
 
+export function hasAdminPlayerDetailsChanged(
+  player: AdminPlayerDetail | undefined,
+  name: string,
+  attributes: Record<PlayerAttributeKey, number>,
+): boolean {
+  return Boolean(
+    player &&
+    (name.trim() !== player.name ||
+      playerAttributeKeys.some(
+        (key) => attributes[key] !== player.attributes[key],
+      )),
+  );
+}
+
+export function hasAdminAccountInputChanges(
+  savedInvitationEmail: string,
+  editedInvitationEmail: string,
+  authProviderId: string,
+): boolean {
+  return (
+    normalizeInvitationEmail(editedInvitationEmail) !==
+      normalizeInvitationEmail(savedInvitationEmail) ||
+    authProviderId.trim().length > 0
+  );
+}
+
 export function useAdminPlayerController({
   administrationDisabled,
   apiClient,
@@ -129,7 +155,9 @@ export function useAdminPlayerController({
     number
   > | null>(null);
   const [authProviderId, setAuthProviderId] = useState('');
-  const [invitationEmail, setInvitationEmail] = useState('');
+  const [invitationEmailOverride, setInvitationEmailOverride] = useState<
+    string | null
+  >(null);
   const [showAdvancedConversion, setShowAdvancedConversion] = useState(false);
   const [confirmingDeactivation, setConfirmingDeactivation] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -141,6 +169,15 @@ export function useAdminPlayerController({
   const name = nameOverride ?? detailQuery.data?.name ?? '';
   const attributes =
     attributesOverride ?? detailQuery.data?.attributes ?? defaultAttributes;
+  const invitationEmail =
+    invitationEmailOverride ??
+    (detailQuery.data?.account.state === 'INVITED'
+      ? detailQuery.data.account.email
+      : '');
+  const savedInvitationEmail =
+    detailQuery.data?.account.state === 'INVITED'
+      ? detailQuery.data.account.email
+      : '';
   const publish = (player: AdminPlayerDetail) =>
     publishAdminPlayer(
       queryClient,
@@ -151,12 +188,14 @@ export function useAdminPlayerController({
   const updateMutation = useMutation({
     mutationFn: (input: UpdateAdminPlayerInput) =>
       updateManagedPlayer(apiClient, playerId ?? '', input),
-    onSuccess: async (player) => {
+    onSuccess: async (player, input) => {
       setConfirmingDeactivation(false);
       setMessage(t('adminPlayer.updated'));
       await publish(player);
-      setNameOverride(null);
-      setAttributesOverride(null);
+      if (input.name !== undefined || input.attributes !== undefined) {
+        setNameOverride(null);
+        setAttributesOverride(null);
+      }
     },
   });
   const avatarMutation = useMutation({
@@ -187,8 +226,8 @@ export function useAdminPlayerController({
   const invitationMutation = useMutation({
     mutationFn: () =>
       inviteGuestPlayer(apiClient, playerId ?? '', invitationEmail),
-    onSuccess: (invitation) => {
-      setInvitationEmail(normalizeInvitationEmail(invitationEmail));
+    onSuccess: async (invitation) => {
+      setInvitationEmailOverride(normalizeInvitationEmail(invitationEmail));
       setMessage(
         t(
           invitation.status === 'ACCEPTED'
@@ -196,6 +235,11 @@ export function useAdminPlayerController({
             : 'adminPlayer.invitationSent',
         ),
       );
+      const updatedPlayer = await apiClient.getAdminPlayerDetail(
+        playerId ?? '',
+      );
+      await publish(updatedPlayer);
+      setInvitationEmailOverride(null);
     },
   });
   const error =
@@ -209,10 +253,22 @@ export function useAdminPlayerController({
     removeAvatarMutation.isPending ||
     invitationMutation.isPending ||
     conversionMutation.isPending;
+  const detailsDirty = hasAdminPlayerDetailsChanged(
+    detailQuery.data,
+    name,
+    attributes,
+  );
+  const accountInputDirty = hasAdminAccountInputChanges(
+    savedInvitationEmail,
+    invitationEmail,
+    authProviderId,
+  );
 
   return {
     detailQuery,
     name,
+    detailsDirty,
+    unsavedChanges: detailsDirty || accountInputDirty,
     attributes,
     authProviderId,
     invitationEmail,
@@ -247,7 +303,9 @@ export function useAdminPlayerController({
         [key]: value,
       })),
     setAuthProviderId,
-    setInvitationEmail,
+    canSaveDetails:
+      detailsDirty && Boolean(name.trim()) && !busy && !administrationDisabled,
+    setInvitationEmail: setInvitationEmailOverride,
     toggleAdvancedConversion: () =>
       setShowAdvancedConversion((current) => !current),
     saveDetails: () => updateMutation.mutate({ name, attributes }),

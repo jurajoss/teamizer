@@ -9,13 +9,13 @@ import {
   shouldRefreshAfterCancellationError,
 } from './use-match-lifecycle-actions';
 import {
+  generateLocalProposal,
   resolveGeneratedProposal,
   startMatchWithProposal,
 } from './use-match-proposal';
 import {
   createGuestParticipant,
   emptyGuestDraft,
-  updateAttendanceAsAdministrator,
   updateOwnAttendance,
 } from './use-open-match-participation';
 
@@ -110,23 +110,6 @@ describe('open Match behavior seams', () => {
     expect(api.removeRegistration).toHaveBeenCalledWith(ids.match);
   });
 
-  it('adds an unanswered Player when an administrator marks them GOING and patches other changes', async () => {
-    const api = participationApi();
-    const match = openMatch();
-
-    await updateAttendanceAsAdministrator(api, match, ids.other, 'GOING');
-    expect(api.addParticipant).toHaveBeenCalledWith(ids.match, {
-      playerId: ids.other,
-    });
-
-    await updateAttendanceAsAdministrator(api, match, ids.other, 'NOT_GOING');
-    expect(api.updateParticipant).toHaveBeenCalledWith(
-      ids.match,
-      ids.other,
-      'NOT_GOING',
-    );
-  });
-
   it('creates a guest with the current name and ratings', async () => {
     const api = participationApi();
     const guest = { ...emptyGuestDraft(), name: 'Guest Pat' };
@@ -162,6 +145,31 @@ describe('open Match behavior seams', () => {
     await expect(
       resolveGeneratedProposal(api, current, teamProposal()),
     ).resolves.toMatchObject({ status: 'STALE', match: { stateVersion: 5 } });
+  });
+
+  it('creates the first local proposal through generation without persisting or starting teams', async () => {
+    const current = openMatch({
+      participants: {
+        going: [player(ids.current, 'Ada'), player(ids.other, 'Ben')],
+        notGoing: [],
+        unanswered: [],
+      },
+    });
+    const api = {
+      generateTeams: vi.fn().mockResolvedValue(teamProposal()),
+      getMatch: vi.fn().mockResolvedValue(current),
+      startMatch: vi.fn(),
+    };
+
+    await expect(generateLocalProposal(api, current)).resolves.toMatchObject({
+      status: 'READY',
+      proposal: {
+        teamAPlayerIds: [ids.current],
+        teamBPlayerIds: [ids.other],
+      },
+    });
+    expect(api.generateTeams).toHaveBeenCalledWith(ids.match);
+    expect(api.startMatch).not.toHaveBeenCalled();
   });
 
   it('starts with the exact edited teams and proposal receipt, and rejects invalid proposals locally', async () => {
@@ -201,6 +209,41 @@ describe('open Match behavior seams', () => {
     await expect(startMatchWithProposal(api, match, null)).rejects.toThrow(
       'generated proposal',
     );
+  });
+
+  it('does not produce an IN_PROGRESS Match when the confirmed start request fails', async () => {
+    const match = openMatch({
+      participants: {
+        going: [player(ids.current, 'Ada'), player(ids.other, 'Ben')],
+        notGoing: [],
+        unanswered: [],
+      },
+    });
+    const proposal = await resolveGeneratedProposal(
+      {
+        generateTeams: vi.fn(),
+        getMatch: vi.fn().mockResolvedValue(match),
+        startMatch: vi.fn(),
+      },
+      match,
+      teamProposal(),
+    );
+    expect(proposal.status).toBe('READY');
+    if (proposal.status !== 'READY') return;
+    const api = {
+      generateTeams: vi.fn(),
+      getMatch: vi.fn(),
+      startMatch: vi
+        .fn()
+        .mockRejectedValue(
+          new ApiClientError(409, 'MATCH_NOT_OPEN', 'technical'),
+        ),
+    };
+
+    await expect(
+      startMatchWithProposal(api, match, proposal.proposal),
+    ).rejects.toMatchObject({ code: 'MATCH_NOT_OPEN' });
+    expect(match.status).toBe('OPEN_FOR_REGISTRATION');
   });
 
   it('delegates cancellation and keeps API errors localized at the seam', async () => {

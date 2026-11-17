@@ -13,12 +13,14 @@ import {
 export function AvatarManager({
   busy,
   name,
+  showPreview = true,
   url,
   onRemove,
   onUpload,
 }: {
   busy: boolean;
   name: string;
+  showPreview?: boolean;
   url: string | null;
   onRemove(): Promise<void>;
   onUpload(file: PreparedAvatar): Promise<void>;
@@ -34,13 +36,15 @@ export function AvatarManager({
 
   return (
     <View style={styles.container}>
-      <View style={styles.identity}>
-        <Avatar name={name} size="hero" url={url} />
-        <View style={styles.copy}>
-          <AppText variant="heading">{t('profile.photo')}</AppText>
-          <AppText tone="muted">{t('profile.photoHint')}</AppText>
+      {showPreview ? (
+        <View style={styles.identity}>
+          <Avatar name={name} size="hero" url={url} />
+          <View style={styles.copy}>
+            <AppText variant="heading">{t('profile.photo')}</AppText>
+            <AppText tone="muted">{t('profile.photoHint')}</AppText>
+          </View>
         </View>
-      </View>
+      ) : null}
       {message ? <FeedbackBanner tone="error" message={message} /> : null}
       <View style={styles.actions}>
         <Button

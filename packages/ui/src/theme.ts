@@ -57,6 +57,10 @@ export type ThemeColors = {
   info: string;
   infoSurface: string;
   infoBorder: string;
+  medalGold: string;
+  medalSilver: string;
+  medalBronze: string;
+  medalNumber: string;
   disabledSurface: string;
   teamAText: string;
   teamASurface: string;
@@ -123,6 +127,10 @@ export const lightColors: ThemeColors = {
   warning: '#76530B',
   warningSurface: '#F8EFCF',
   warningBorder: '#D0B86B',
+  medalGold: '#996E09',
+  medalSilver: '#6B7973',
+  medalBronze: '#A56843',
+  medalNumber: '#FFFFFF',
   disabledSurface: '#E7ECE8',
   teamAText: '#176B6B',
   teamASurface: '#DDF1F0',
@@ -164,6 +172,10 @@ export const darkColors: ThemeColors = {
   info: '#9BC8F3',
   infoSurface: '#1C3349',
   infoBorder: '#355B7D',
+  medalGold: '#E2B84B',
+  medalSilver: '#AEBBB6',
+  medalBronze: '#D88A5B',
+  medalNumber: '#0D1712',
   disabledSurface: '#1A261F',
   teamAText: '#7BD4D1',
   teamASurface: '#173D3C',

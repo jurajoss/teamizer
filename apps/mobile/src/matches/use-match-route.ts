@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AppState } from 'react-native';
 
 import { useAppServices } from '../providers/app-services-context';
@@ -78,6 +79,12 @@ export function useMatchRouteController({
 
     return () => subscription.remove();
   }, [matchId, refetchMatch]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (matchId) void refetchMatch();
+    }, [matchId, refetchMatch]),
+  );
 
   return { apiClient, controller, matchQuery, scoringState };
 }

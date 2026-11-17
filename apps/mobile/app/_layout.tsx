@@ -1,10 +1,11 @@
-import { Stack } from 'expo-router';
+import { Stack, ThemeProvider } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { useTheme } from '@teamizer/ui';
 
 import { AppProviders } from '../src/providers/app-providers';
+import { navigationThemeFor } from '../src/navigation/navigation-theme';
 
 export default function RootLayout() {
   return (
@@ -17,9 +18,10 @@ export default function RootLayout() {
 }
 
 function RootNavigator() {
-  const { colors, mode } = useTheme();
+  const theme = useTheme();
+  const { colors, mode } = theme;
   return (
-    <>
+    <ThemeProvider value={navigationThemeFor(theme)}>
       <StatusBar style={mode === 'dark' ? 'light' : 'dark'} />
       <Stack
         screenOptions={{
@@ -33,6 +35,6 @@ function RootNavigator() {
         <Stack.Screen name="onboarding" />
         <Stack.Screen name="(app)" />
       </Stack>
-    </>
+    </ThemeProvider>
   );
 }

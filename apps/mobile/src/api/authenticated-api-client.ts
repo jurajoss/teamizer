@@ -27,6 +27,7 @@ import {
   currentUserResponseSchema,
   idempotencyKeySchema,
   matchDetailSchema,
+  matchesPageSchema,
   matchSummarySchema,
   matchIdSchema,
   type CompleteMatchInput,
@@ -35,6 +36,7 @@ import {
   type MatchDetail,
   type MatchParticipant,
   type MatchSummary,
+  type MatchesPage,
   matchParticipantSchema,
   playerDetailSchema,
   type PlayerDetail,
@@ -145,6 +147,19 @@ export class AuthenticatedApiClient {
 
   getUpcomingMatches(): Promise<UpcomingMatch[]> {
     return this.requestData('/matches/upcoming', upcomingMatchesSchema);
+  }
+
+  getMatches(
+    options: {
+      cursor?: string;
+      limit?: number;
+      status?: MatchSummary['status'];
+    } = {},
+  ): Promise<MatchesPage> {
+    return this.requestData(
+      `/matches${queryString(options)}`,
+      matchesPageSchema,
+    );
   }
 
   getAdminSports(): Promise<SportSummary[]> {

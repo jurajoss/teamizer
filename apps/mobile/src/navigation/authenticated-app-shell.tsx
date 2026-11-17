@@ -20,58 +20,56 @@ import { AppScreenShellProvider } from '../ui/app-screen-shell-context';
 import { AppIcon } from '../ui/icons/app-icon';
 import {
   activePrimaryDestination,
-  authenticatedShellPresentation,
+  authenticatedShellPresentationForPath,
+  initialPrimaryDestination,
   primaryDestinations,
   primaryNavigationTarget,
   type PrimaryDestination,
   type PrimaryDestinationKey,
 } from './primary-navigation';
-import { PrimaryNavigationVisibilityProvider } from './primary-navigation-visibility';
 
 export function AuthenticatedAppShell({ children }: { children: ReactNode }) {
   const { colors } = useTheme();
   const { mode } = useResponsiveLayout();
   const pathname = usePathname();
-  const [primaryNavigationHidden, setPrimaryNavigationHidden] = useState(false);
-  const activeDestination = activePrimaryDestination(pathname);
-  const presentation = authenticatedShellPresentation(
-    mode,
-    primaryNavigationHidden,
-  );
+  const resolvedDestination = activePrimaryDestination(pathname);
+  const [retainedDestination, setRetainedDestination] =
+    useState<PrimaryDestinationKey>(initialPrimaryDestination(pathname));
+  const activeDestination = resolvedDestination ?? retainedDestination;
+  const presentation = authenticatedShellPresentationForPath(mode, pathname);
 
   const navigate = (destination: PrimaryDestination) => {
+    setRetainedDestination(destination.key);
     const target = primaryNavigationTarget(pathname, destination);
     if (target) router.dismissTo(target as Href);
   };
 
   return (
-    <PrimaryNavigationVisibilityProvider value={setPrimaryNavigationHidden}>
-      <View
-        style={[
-          mode === 'tablet' ? styles.tabletShell : styles.phoneShell,
-          { backgroundColor: colors.background },
-        ]}
+    <View
+      style={[
+        mode === 'tablet' ? styles.tabletShell : styles.phoneShell,
+        { backgroundColor: colors.background },
+      ]}
+    >
+      {presentation.showSidebar ? (
+        <TabletSidebar
+          activeDestination={activeDestination}
+          onNavigate={navigate}
+        />
+      ) : null}
+      <AppScreenShellProvider
+        key={presentation.contentKey}
+        ownership={presentation.ownership}
       >
-        {presentation.showSidebar ? (
-          <TabletSidebar
-            activeDestination={activeDestination}
-            onNavigate={navigate}
-          />
-        ) : null}
-        <AppScreenShellProvider
-          key={presentation.contentKey}
-          ownership={presentation.ownership}
-        >
-          <View style={styles.content}>{children}</View>
-        </AppScreenShellProvider>
-        {presentation.showBottomNavigation ? (
-          <PhoneBottomNavigation
-            activeDestination={activeDestination}
-            onNavigate={navigate}
-          />
-        ) : null}
-      </View>
-    </PrimaryNavigationVisibilityProvider>
+        <View style={styles.content}>{children}</View>
+      </AppScreenShellProvider>
+      {presentation.showBottomNavigation ? (
+        <PhoneBottomNavigation
+          activeDestination={activeDestination}
+          onNavigate={navigate}
+        />
+      ) : null}
+    </View>
   );
 }
 

@@ -310,6 +310,51 @@ describe('AuthenticatedApiClient', () => {
     expect(matches[0]).not.toHaveProperty('authProviderId');
   });
 
+  it('loads a filtered page of finished Match summaries', async () => {
+    const finished = {
+      id: matchDetailResponse.id,
+      sport: matchDetailResponse.sport,
+      startsAt: matchDetailResponse.startsAt,
+      location: matchDetailResponse.location,
+      status: 'FINISHED',
+      stateVersion: 5,
+      teamAScore: 2,
+    };
+    const fetchImplementation = vi
+      .fn<FetchImplementation>()
+      .mockResolvedValue(
+        jsonResponse({ items: [finished], nextCursor: 'next-page' }),
+      );
+    const client = new AuthenticatedApiClient(
+      'https://api.example.test',
+      { getIdToken: vi.fn().mockResolvedValue('token') },
+      fetchImplementation,
+    );
+
+    const page = await client.getMatches({
+      cursor: 'cursor',
+      limit: 10,
+      status: 'FINISHED',
+    });
+
+    expect(page).toEqual({
+      items: [
+        {
+          id: finished.id,
+          sport: finished.sport,
+          startsAt: finished.startsAt,
+          location: finished.location,
+          status: 'FINISHED',
+          stateVersion: 5,
+        },
+      ],
+      nextCursor: 'next-page',
+    });
+    expect(fetchImplementation.mock.calls[0]?.[0]).toBe(
+      'https://api.example.test/matches?limit=10&cursor=cursor&status=FINISHED',
+    );
+  });
+
   it('loads authoritative ranking order and strips hidden Player fields', async () => {
     const rankingResponse = {
       items: [
@@ -328,6 +373,11 @@ describe('AuthenticatedApiClient', () => {
             winRate: 0.5,
             goals: 3,
             goalsPerMatch: 1.5,
+            attendance: {
+              playedMatches: 2,
+              totalMatches: 4,
+              percentage: 50,
+            },
           },
           internalDiagnostics: { score: 100 },
         },
@@ -352,9 +402,21 @@ describe('AuthenticatedApiClient', () => {
     expect(ranking.items[0]?.player).not.toHaveProperty('attributes');
     expect(ranking.items[0]?.player).not.toHaveProperty('balancingRating');
     expect(ranking.items[0]).not.toHaveProperty('internalDiagnostics');
+    expect(ranking.items[0]?.statistics).toMatchObject({
+      draws: 1,
+      losses: 0,
+      winRate: 0.5,
+      wins: 1,
+    });
+    expect(ranking.items[0]?.statistics.attendance).toEqual({
+      playedMatches: 2,
+      totalMatches: 4,
+      percentage: 50,
+    });
     expect(fetchImplementation.mock.calls[0]?.[0]).toBe(
       'https://api.example.test/rankings?limit=25&cursor=page+one',
     );
+    expect(fetchImplementation).toHaveBeenCalledOnce();
   });
 
   it('loads zero-Match Player detail without accepting private attributes', async () => {
@@ -368,6 +430,11 @@ describe('AuthenticatedApiClient', () => {
         winRate: null,
         goals: 0,
         goalsPerMatch: null,
+        attendance: {
+          playedMatches: 0,
+          totalMatches: 0,
+          percentage: null,
+        },
       },
     };
     const client = new AuthenticatedApiClient(
@@ -382,6 +449,11 @@ describe('AuthenticatedApiClient', () => {
 
     expect(detail.statistics.winRate).toBeNull();
     expect(detail.statistics.goalsPerMatch).toBeNull();
+    expect(detail.statistics.attendance).toEqual({
+      playedMatches: 0,
+      totalMatches: 0,
+      percentage: null,
+    });
     expect(detail).not.toHaveProperty('attributes');
   });
 
@@ -723,6 +795,11 @@ describe('AuthenticatedApiClient', () => {
       winRate: null,
       goals: 0,
       goalsPerMatch: null,
+      attendance: {
+        playedMatches: 0,
+        totalMatches: 0,
+        percentage: null,
+      },
     };
     const publicDetail = {
       ...currentUserResponse.player,
@@ -731,6 +808,7 @@ describe('AuthenticatedApiClient', () => {
     };
     const adminDetail = {
       ...publicDetail,
+      account: { state: 'UNLINKED' },
       attributes: {
         speed: 5,
         endurance: 6,
@@ -801,6 +879,7 @@ describe('AuthenticatedApiClient', () => {
 
     expect(list.items[0]).not.toHaveProperty('attributes');
     expect(detail.attributes).toEqual(adminDetail.attributes);
+    expect(detail.account).toEqual({ state: 'UNLINKED' });
     expect(invitation.status).toBe('SENT');
     expect(conversion.player.id).toBe(playerId);
     expect(fetchImplementation.mock.calls.map(([url]) => url)).toEqual([
@@ -840,6 +919,11 @@ describe('AuthenticatedApiClient', () => {
         winRate: null,
         goals: 0,
         goalsPerMatch: null,
+        attendance: {
+          playedMatches: 0,
+          totalMatches: 0,
+          percentage: null,
+        },
       },
     };
     const fetchImplementation = vi
@@ -886,6 +970,11 @@ describe('AuthenticatedApiClient', () => {
         winRate: null,
         goals: 0,
         goalsPerMatch: null,
+        attendance: {
+          playedMatches: 0,
+          totalMatches: 0,
+          percentage: null,
+        },
       },
     });
     const body = new FormData();

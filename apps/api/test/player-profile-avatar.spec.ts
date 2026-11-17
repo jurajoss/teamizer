@@ -2,6 +2,7 @@ import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import {
   MatchStatus,
+  PlayerInvitationStatus,
   PlayerStatus,
   PlayerType,
   PrismaClient,
@@ -238,12 +239,21 @@ describeWithDatabase('Player profiles, administration, and avatars', () => {
       .set('Authorization', authorization)
       .expect(200);
     expect(detail.body).not.toHaveProperty('attributes');
+    expect(detail.body).not.toHaveProperty('account');
     expect(detail.body.name).toBe('other-player');
   });
 
   it('gives active ADMINs public list rows and private editable detail', async () => {
     const admin = await createUser('profile-admin', { role: UserRole.ADMIN });
     const guest = await createGuest('Guest Alpha');
+    const invitedGuest = await createGuest('Awaiting Player');
+    await prisma.playerInvitation.create({
+      data: {
+        email: 'invited-guest@example.com',
+        playerId: invitedGuest.id,
+        status: PlayerInvitationStatus.SENT,
+      },
+    });
     const authorization = authorize('admin-token', admin.authProviderId);
 
     const list = await request(app.getHttpServer())
@@ -252,6 +262,14 @@ describeWithDatabase('Player profiles, administration, and avatars', () => {
       .expect(200);
     const detail = await request(app.getHttpServer())
       .get(`/players/${guest.id}`)
+      .set('Authorization', authorization)
+      .expect(200);
+    const invitedDetail = await request(app.getHttpServer())
+      .get(`/players/${invitedGuest.id}`)
+      .set('Authorization', authorization)
+      .expect(200);
+    const registeredDetail = await request(app.getHttpServer())
+      .get(`/players/${admin.player.id}`)
       .set('Authorization', authorization)
       .expect(200);
 
@@ -264,6 +282,13 @@ describeWithDatabase('Player profiles, administration, and avatars', () => {
     ]);
     expect(list.body.items[0]).not.toHaveProperty('attributes');
     expect(detail.body.attributes).toEqual(attributes);
+    expect(detail.body.account).toEqual({ state: 'UNLINKED' });
+    expect(invitedDetail.body.account).toEqual({
+      state: 'INVITED',
+      email: 'invited-guest@example.com',
+      invitationStatus: 'SENT',
+    });
+    expect(registeredDetail.body.account).toEqual({ state: 'REGISTERED' });
   });
 
   it('validates ADMIN attribute edits and enforces active administration', async () => {

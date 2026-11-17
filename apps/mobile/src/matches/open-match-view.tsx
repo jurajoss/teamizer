@@ -1,34 +1,38 @@
+import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import {
   AppText,
   Avatar,
+  borderWidths,
   Button,
+  Card,
   FeedbackBanner,
   NumberStepper,
+  radii,
   sizes,
   spacing,
-  StatusPill,
-  Surface,
   TextField,
-  useResponsiveLayout,
   useTheme,
 } from '@teamizer/ui';
 
 import type { AuthenticatedApiClient } from '../api/authenticated-api-client';
 import type { Attendance, CurrentUser, MatchDetail } from '../api/contracts';
+import { PersonalAttendanceControl } from '../attendance/attendance-control';
+import { usePreferences } from '../preferences/preferences-context';
+import { AppIcon } from '../ui/icons/app-icon';
 import {
-  canMovePlayer,
   canShowAdminMatchControls,
-  canSubmitStart,
-  proposalWasAdjusted,
-  type TransientTeamProposal,
+  editParticipantsRouteFor,
+  editTeamsRouteFor,
+  formatMatchDate,
   validateParticipantGroups,
-  validateProposal,
 } from './match-flow';
 import type { OpenMatchFeedback } from './open-match-feedback';
+import { MatchTeamColumns } from './match-team-columns';
+import { isTeamDraftValidForMatch } from './team-draft-store';
 import {
   guestAttributeKeys,
   type GuestDraft,
@@ -47,7 +51,6 @@ export function OpenMatchView({
   match: MatchDetail;
 }) {
   const { t } = useTranslation();
-  const { isTablet } = useResponsiveLayout();
   const [message, setMessage] = useState<OpenMatchFeedback | null>(null);
   const participantData = useMemo(
     () => validateParticipantGroups(match),
@@ -58,6 +61,7 @@ export function OpenMatchView({
     active && canShowAdminMatchControls(currentUser.user.role, match.status);
   const proposalActions = useMatchProposal({
     apiClient,
+    enabled: active,
     match,
     setFeedback: setMessage,
   });
@@ -65,24 +69,24 @@ export function OpenMatchView({
     apiClient,
     currentUser,
     match,
-    invalidateProposal: proposalActions.invalidate,
+    onAttendanceChanged: proposalActions.handleAuthoritativeChange,
     setFeedback: setMessage,
   });
   const cancellation = useMatchCancellation({
     apiClient,
     match,
-    invalidateProposal: proposalActions.invalidate,
+    invalidateProposal: proposalActions.clear,
     setFeedback: setMessage,
   });
   const proposal = proposalActions.proposal;
 
   if (!participantData.valid) {
     return (
-      <View style={styles.section}>
+      <View style={styles.screenSections}>
         <FeedbackBanner
-          tone="error"
-          title={t('match.unavailable')}
           message={t('common.connectionRetry')}
+          title={t('match.unavailable')}
+          tone="error"
         />
         <Button
           label={t('attendance.refresh')}
@@ -92,664 +96,604 @@ export function OpenMatchView({
     );
   }
 
-  const playersById = participantData.playersById;
-  const proposalValidation = proposal
-    ? validateProposal(match, proposal)
-    : null;
-  const mayGenerate = active && match.participants.going.length >= 2;
   const busy =
     participation.attendance.isPending ||
-    participation.participant.isPending ||
     participation.guest.isPending ||
     proposalActions.generationPending ||
     proposalActions.startPending ||
     cancellation.isPending;
+  const mayGenerate = active && match.participants.going.length >= 2;
+  const mayStart =
+    active &&
+    !busy &&
+    proposal !== null &&
+    isTeamDraftValidForMatch(proposal, match);
 
   return (
-    <View style={styles.section}>
-      {!active ? (
-        <FeedbackBanner
-          tone="warning"
-          title={t('attendance.actionsUnavailable')}
-          message={t('attendance.inactiveHint')}
-        />
-      ) : null}
+    <View style={styles.screenSections}>
       {message ? (
         <FeedbackBanner
-          tone={message.tone}
           message={message.text}
+          tone={message.tone}
           {...(message.title ? { title: message.title } : {})}
         />
       ) : null}
-
-      <Surface style={styles.attendanceCard}>
-        <View style={styles.sectionHeading}>
-          <AppText variant="eyebrow" tone="brand">
-            {t('attendance.response').toUpperCase()}
-          </AppText>
-          <AppText variant="heading">{t('attendance.question')}</AppText>
-        </View>
-        <View style={styles.buttonRow}>
-          <Button
-            busy={
-              participation.attendance.isPending &&
-              participation.attendance.pendingValue === 'GOING'
-            }
-            disabled={!active || busy || match.myAttendance === 'GOING'}
-            fullWidth={false}
-            label={t('attendance.going')}
-            onPress={() => participation.attendance.update('GOING')}
-          />
-          <Button
-            busy={
-              participation.attendance.isPending &&
-              participation.attendance.pendingValue === 'NOT_GOING'
-            }
-            disabled={!active || busy || match.myAttendance === 'NOT_GOING'}
-            fullWidth={false}
-            label={t('attendance.notGoing')}
-            onPress={() => participation.attendance.update('NOT_GOING')}
-            variant="secondary"
-          />
-          <Button
-            busy={
-              participation.attendance.isPending &&
-              participation.attendance.pendingValue === null
-            }
-            disabled={!active || busy || match.myAttendance === null}
-            fullWidth={false}
-            label={t('attendance.clear')}
-            onPress={() => participation.attendance.update(null)}
-            variant="ghost"
-          />
-        </View>
-      </Surface>
-
-      <ParticipantOverview
-        busy={busy}
-        isAdmin={isAdmin}
-        match={match}
-        onUpdate={(playerId, attendance) =>
-          participation.participant.update(playerId, attendance)
-        }
-      />
-
-      <GuestSection
-        busy={participation.guest.isPending}
-        disabled={!active || busy}
-        draft={participation.guest.draft}
-        open={participation.guest.isOpen}
-        onChange={participation.guest.setDraft}
-        onSubmit={participation.guest.submit}
-        onToggle={participation.guest.toggle}
-      />
-
-      <View style={styles.generationSection}>
-        <View style={styles.sectionHeading}>
-          <AppText variant="eyebrow" tone="brand">
-            {t('teams.title').toUpperCase()}
-          </AppText>
-          <AppText variant="heading">{t('teams.build')}</AppText>
-          <AppText tone="muted">{t('teams.buildHint')}</AppText>
-        </View>
-        {!mayGenerate ? (
-          <FeedbackBanner tone="info" message={t('teams.minimum')} />
-        ) : null}
-        <Button
-          busy={proposalActions.generationPending}
-          disabled={!mayGenerate || busy}
-          label={proposal ? t('teams.generateDifferent') : t('teams.generate')}
-          onPress={proposalActions.generate}
-          variant={proposal ? 'secondary' : 'primary'}
-        />
-      </View>
-
-      {proposal ? (
-        <ProposalEditor
-          playersById={playersById}
-          proposal={proposal}
-          selectedSwapPlayerId={proposalActions.selectedSwapPlayerId}
-          wide={isTablet}
-          onMove={proposalActions.move}
-          onSelectSwap={proposalActions.selectSwap}
+      {!active ? (
+        <FeedbackBanner
+          message={t('attendance.inactiveHint')}
+          title={t('attendance.actionsUnavailable')}
+          tone="warning"
         />
       ) : null}
 
+      <MatchInformation match={match} />
+      <MatchAttendanceSection
+        active={active}
+        attendance={match.myAttendance}
+        busy={busy}
+        pendingValue={participation.attendance.pendingValue}
+        updating={participation.attendance.isPending}
+        onUpdate={participation.attendance.update}
+      />
+      <MatchParticipantsSection
+        busy={busy || !active}
+        guest={participation.guest}
+        isAdmin={isAdmin}
+        match={match}
+        onEditParticipants={() =>
+          router.push(editParticipantsRouteFor(match.id))
+        }
+      />
+      <MatchTeamsSection
+        generating={proposalActions.generationPending}
+        mayGenerate={mayGenerate}
+        playersById={participantData.playersById}
+        proposal={proposal}
+        stale={proposalActions.stale}
+        onEdit={() => router.push(editTeamsRouteFor(match.id))}
+        onGenerate={proposalActions.generate}
+      />
+
       {proposal ? (
-        <Surface tone="brand" style={styles.startArea}>
-          <View style={styles.sectionHeading}>
-            <AppText variant="heading">{t('teams.start')}</AppText>
-            <AppText tone="muted">
-              {proposalWasAdjusted(proposal)
-                ? t('teams.adjustedStartHint')
-                : t('teams.startHint')}
-            </AppText>
-          </View>
-          {proposalValidation && !proposalValidation.valid ? (
-            <FeedbackBanner
-              tone="error"
-              message={t('errors.INVALID_TEAM_COMPOSITION')}
-            />
-          ) : null}
-          {proposalActions.confirmingStart ? (
-            <View style={styles.confirmation}>
-              <FeedbackBanner
-                tone="warning"
-                title={t('teams.lockTitle')}
-                message={t('teams.lockHint')}
-              />
-              <View style={styles.buttonRowEnd}>
-                <Button
-                  disabled={proposalActions.startPending}
-                  fullWidth={false}
-                  label={t('teams.keepEditing')}
-                  onPress={proposalActions.cancelStartConfirmation}
-                  variant="secondary"
-                />
-                <Button
-                  busy={proposalActions.startPending}
-                  fullWidth={false}
-                  label={t('teams.confirmStart')}
-                  onPress={proposalActions.start}
-                />
-              </View>
-            </View>
-          ) : (
-            <Button
-              disabled={!canSubmitStart(match, proposal, busy)}
-              label={t('teams.start')}
-              onPress={proposalActions.beginStartConfirmation}
-            />
-          )}
-        </Surface>
+        <MatchStartAction
+          confirming={proposalActions.confirmingStart}
+          enabled={mayStart}
+          pending={proposalActions.startPending}
+          onBegin={proposalActions.beginStartConfirmation}
+          onCancel={proposalActions.cancelStartConfirmation}
+          onConfirm={proposalActions.start}
+        />
       ) : null}
 
       {isAdmin ? (
-        <Surface tone="muted" style={styles.cancelArea}>
-          <View style={styles.sectionHeading}>
-            <AppText variant="heading">{t('cancellation.title')}</AppText>
-            <AppText tone="muted">{t('cancellation.hint')}</AppText>
-          </View>
-          {cancellation.confirming ? (
-            <View style={styles.confirmation}>
-              <FeedbackBanner
-                tone="warning"
-                title={t('cancellation.confirmTitle')}
-                message={t('cancellation.confirmHint')}
-              />
-              <View style={styles.buttonRowEnd}>
-                <Button
-                  disabled={cancellation.isPending}
-                  fullWidth={false}
-                  label={t('cancellation.keep')}
-                  onPress={cancellation.cancelConfirmation}
-                  variant="secondary"
-                />
-                <Button
-                  busy={cancellation.isPending}
-                  fullWidth={false}
-                  label={t('cancellation.confirm')}
-                  onPress={cancellation.cancel}
-                  variant="destructive"
-                />
-              </View>
-            </View>
-          ) : (
-            <Button
-              disabled={busy}
-              label={t('cancellation.title')}
-              onPress={cancellation.beginConfirmation}
-              variant="destructive"
-            />
-          )}
-        </Surface>
+        <MatchCancellationSection
+          confirming={cancellation.confirming}
+          pending={cancellation.isPending}
+          onBegin={cancellation.beginConfirmation}
+          onCancel={cancellation.cancelConfirmation}
+          onConfirm={cancellation.cancel}
+        />
       ) : null}
     </View>
   );
 }
 
-function ParticipantOverview({
+export function MatchInformation({ match }: { match: MatchDetail }) {
+  const { colors } = useTheme();
+  const { language } = usePreferences();
+  const { t } = useTranslation();
+  return (
+    <Card padding="compact" style={styles.informationCard}>
+      <View style={styles.informationRow}>
+        <AppIcon color={colors.textSecondary} name="matches" />
+        <View style={styles.informationCopy}>
+          <AppText variant="bodyStrong">
+            {formatMatchDate(match.startsAt, language)}
+          </AppText>
+          <AppText tone="muted" variant="caption">
+            {match.sport.name}
+          </AppText>
+        </View>
+      </View>
+      <View style={styles.informationRow}>
+        <AppIcon color={colors.textSecondary} name="location" />
+        <AppText tone={match.location ? 'default' : 'muted'}>
+          {match.location ?? t('match.locationMissing')}
+        </AppText>
+      </View>
+    </Card>
+  );
+}
+
+export function MatchAttendanceSection({
+  active,
+  attendance,
   busy,
-  isAdmin,
-  match,
+  pendingValue,
+  updating,
   onUpdate,
 }: {
+  active: boolean;
+  attendance: Attendance | null;
   busy: boolean;
+  pendingValue: Attendance | null | undefined;
+  updating: boolean;
+  onUpdate(attendance: Attendance | null): Promise<void> | void;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <Card padding="compact" style={styles.attendanceCard}>
+      <AppText variant="heading">{t('attendance.myAttendance')}</AppText>
+      <PersonalAttendanceControl
+        attendance={attendance}
+        disabled={!active || busy}
+        pendingAttendance={
+          updating && pendingValue !== null ? pendingValue : undefined
+        }
+        onChange={onUpdate}
+      />
+    </Card>
+  );
+}
+
+export function MatchParticipantsSection({
+  busy,
+  guest,
+  isAdmin,
+  match,
+  onEditParticipants,
+}: {
+  busy: boolean;
+  guest: ReturnType<typeof useOpenMatchParticipation>['guest'];
   isAdmin: boolean;
   match: MatchDetail;
-  onUpdate(playerId: string, attendance: Attendance): void;
+  onEditParticipants(): void;
 }) {
   const { t } = useTranslation();
   return (
-    <View style={styles.section}>
-      <View style={styles.sectionHeading}>
-        <AppText variant="eyebrow" tone="brand">
-          {t('attendance.title').toUpperCase()}
-        </AppText>
-        <AppText variant="heading">{t('attendance.who')}</AppText>
+    <Card padding="compact" style={styles.participantsCard}>
+      <AppText variant="heading">{t('attendance.participants')}</AppText>
+      <ParticipantGroup
+        label={t('attendance.going')}
+        players={match.participants.going}
+      />
+      <ParticipantGroup
+        label={t('attendance.notGoing')}
+        players={match.participants.notGoing}
+      />
+      <View style={styles.participantActions}>
+        <TextAction
+          disabled={busy}
+          icon={guest.isOpen ? 'decline' : 'add'}
+          label={guest.isOpen ? t('guest.close') : t('guest.add')}
+          onPress={guest.toggle}
+        />
+        {isAdmin ? (
+          <TextAction
+            disabled={busy}
+            icon="edit"
+            label={t('attendance.editParticipantsAction')}
+            onPress={onEditParticipants}
+          />
+        ) : null}
       </View>
-      <Surface padding="none" style={styles.participantSurface}>
-        <ParticipantGroup
-          attendance="GOING"
-          busy={busy}
-          isAdmin={isAdmin}
-          label={t('attendance.going')}
-          players={match.participants.going}
-          onUpdate={onUpdate}
+      {guest.isOpen ? (
+        <GuestForm
+          busy={guest.isPending}
+          disabled={busy}
+          draft={guest.draft}
+          onChange={guest.setDraft}
+          onSubmit={guest.submit}
         />
-        <ParticipantGroup
-          attendance="NOT_GOING"
-          busy={busy}
-          isAdmin={isAdmin}
-          label={t('attendance.notGoing')}
-          players={match.participants.notGoing}
-          onUpdate={onUpdate}
-        />
-        <ParticipantGroup
-          attendance={null}
-          busy={busy}
-          isAdmin={isAdmin}
-          label={t('attendance.unanswered')}
-          players={match.participants.unanswered}
-          onUpdate={onUpdate}
-        />
-      </Surface>
-      {isAdmin ? (
-        <FeedbackBanner tone="info" message={t('admin.playersHint')} />
       ) : null}
-    </View>
+    </Card>
   );
 }
 
 function ParticipantGroup({
-  attendance,
-  busy,
-  isAdmin,
   label,
   players,
-  onUpdate,
 }: {
-  attendance: Attendance | null;
-  busy: boolean;
-  isAdmin: boolean;
   label: string;
   players: MatchDetail['participants']['going'];
-  onUpdate(playerId: string, attendance: Attendance): void;
 }) {
   const { colors } = useTheme();
   const { t } = useTranslation();
   return (
-    <View
-      style={[styles.participantGroup, { borderBottomColor: colors.border }]}
-    >
-      <View style={styles.groupHeading}>
-        <AppText variant="bodyStrong">{label}</AppText>
-        <AppText variant="caption" tone="muted">
-          {players.length}
-        </AppText>
-      </View>
-      {players.length === 0 ? (
-        <AppText tone="muted">{t('attendance.empty')}</AppText>
-      ) : (
-        players.map((player) => (
-          <View
-            key={player.id}
-            style={[styles.participantRow, { borderTopColor: colors.border }]}
-          >
-            <Avatar name={player.name} size="small" url={player.avatarUrl} />
-            <View style={styles.playerName}>
-              <AppText variant="bodyStrong">{player.name}</AppText>
-              {player.type === 'GUEST' ? (
-                <StatusPill label={t('status.guest')} tone="neutral" />
-              ) : null}
+    <View style={styles.participantGroup}>
+      <AppText tone="muted" variant="bodyStrong">
+        {t('attendance.groupCount', { count: players.length, label })}
+      </AppText>
+      {players.length > 0 ? (
+        <View style={styles.participantGrid}>
+          {players.map((player) => (
+            <View
+              key={player.id}
+              style={[
+                styles.participantTile,
+                {
+                  backgroundColor: colors.surfaceSubtle,
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              <Avatar name={player.name} size="small" url={player.avatarUrl} />
+              <AppText numberOfLines={2} style={styles.participantName}>
+                {player.name}
+              </AppText>
             </View>
-            {isAdmin ? (
-              <View style={styles.adminRowActions}>
-                {attendance !== 'GOING' ? (
-                  <Button
-                    disabled={busy}
-                    fullWidth={false}
-                    label={t('attendance.setGoing')}
-                    onPress={() => onUpdate(player.id, 'GOING')}
-                    variant="ghost"
-                  />
-                ) : null}
-                {attendance !== 'NOT_GOING' ? (
-                  <Button
-                    disabled={busy}
-                    fullWidth={false}
-                    label={t('attendance.setNotGoing')}
-                    onPress={() => onUpdate(player.id, 'NOT_GOING')}
-                    variant="ghost"
-                  />
-                ) : null}
-              </View>
-            ) : null}
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function GuestForm({
+  busy,
+  disabled,
+  draft,
+  onChange,
+  onSubmit,
+}: {
+  busy: boolean;
+  disabled: boolean;
+  draft: GuestDraft;
+  onChange(draft: GuestDraft): void;
+  onSubmit(): void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <View style={styles.guestForm}>
+      <TextField
+        autoCapitalize="words"
+        editable={!disabled}
+        label={t('guest.name')}
+        maxLength={120}
+        onChangeText={(name) => onChange({ ...draft, name })}
+        placeholder={t('guest.placeholder')}
+        value={draft.name}
+      />
+      {guestAttributeKeys.map((key) => {
+        const label = t(`attributes.${key}`);
+        return (
+          <NumberStepper
+            decreaseLabel={t('attributes.decrease', { label })}
+            disabled={disabled}
+            increaseLabel={t('attributes.increase', { label })}
+            key={key}
+            label={label}
+            maximum={10}
+            minimum={1}
+            onChange={(value) =>
+              onChange({
+                ...draft,
+                attributes: { ...draft.attributes, [key]: value },
+              })
+            }
+            value={draft.attributes[key]}
+            valueLabel={t('attributes.value', {
+              label,
+              maximum: 10,
+              value: draft.attributes[key],
+            })}
+          />
+        );
+      })}
+      <Button
+        busy={busy}
+        disabled={disabled}
+        label={t('guest.create')}
+        onPress={onSubmit}
+      />
+    </View>
+  );
+}
+
+export function MatchTeamsSection({
+  generating,
+  mayGenerate,
+  playersById,
+  proposal,
+  stale,
+  onEdit,
+  onGenerate,
+}: {
+  generating: boolean;
+  mayGenerate: boolean;
+  playersById: Map<string, MatchDetail['participants']['going'][number]>;
+  proposal: ReturnType<typeof useMatchProposal>['proposal'];
+  stale: boolean;
+  onEdit(): void;
+  onGenerate(): void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Card padding="compact" style={styles.teamsCard}>
+      <AppText variant="heading">{t('teams.title')}</AppText>
+      {stale ? (
+        <FeedbackBanner
+          message={t('teams.staleHint')}
+          title={t('teams.staleTitle')}
+          tone="warning"
+        />
+      ) : null}
+      {!mayGenerate ? (
+        <FeedbackBanner message={t('teams.minimum')} tone="info" />
+      ) : null}
+      {generating && !proposal ? (
+        <AppText tone="muted">{t('teams.generating')}</AppText>
+      ) : null}
+      {proposal ? (
+        <MatchTeamColumns
+          teamAPlayers={playersForTeam(proposal.teamAPlayerIds, playersById)}
+          teamBPlayers={playersForTeam(proposal.teamBPlayerIds, playersById)}
+        />
+      ) : null}
+      {proposal ? (
+        <View style={styles.teamActions}>
+          <TextAction
+            busy={generating}
+            disabled={!mayGenerate || generating}
+            icon="regenerate"
+            label={stale ? t('teams.update') : t('teams.regenerate')}
+            onPress={onGenerate}
+          />
+          <TextAction
+            disabled={generating || !mayGenerate}
+            icon="edit"
+            label={t('teams.edit')}
+            onPress={onEdit}
+          />
+        </View>
+      ) : null}
+    </Card>
+  );
+}
+
+function playersForTeam(
+  playerIds: string[],
+  playersById: Map<string, MatchDetail['participants']['going'][number]>,
+): MatchDetail['participants']['going'] {
+  return playerIds.flatMap((id) => {
+    const player = playersById.get(id);
+    return player ? [player] : [];
+  });
+}
+
+export function TextAction({
+  busy = false,
+  compact = false,
+  disabled = false,
+  icon,
+  label,
+  onPress,
+}: {
+  busy?: boolean;
+  compact?: boolean;
+  disabled?: boolean;
+  icon: 'add' | 'complete' | 'decline' | 'edit' | 'regenerate';
+  label: string;
+  onPress(): void;
+}) {
+  const { colors } = useTheme();
+  const foreground = disabled ? colors.textDisabled : colors.accent;
+  return (
+    <Pressable
+      accessibilityLabel={label}
+      accessibilityRole="button"
+      accessibilityState={{ busy, disabled }}
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.textAction,
+        compact && styles.textActionCompact,
+        pressed && !disabled && { backgroundColor: colors.accentSoft },
+      ]}
+    >
+      <AppIcon color={foreground} name={icon} size={sizes.icon.small} />
+      <AppText
+        numberOfLines={compact ? 2 : undefined}
+        style={[styles.textActionLabel, { color: foreground }]}
+        variant="bodyStrong"
+      >
+        {label}
+      </AppText>
+    </Pressable>
+  );
+}
+
+export function MatchStartAction({
+  confirming,
+  enabled,
+  pending,
+  onBegin,
+  onCancel,
+  onConfirm,
+}: {
+  confirming: boolean;
+  enabled: boolean;
+  pending: boolean;
+  onBegin(): void;
+  onCancel(): void;
+  onConfirm(): void;
+}) {
+  const { colors } = useTheme();
+  const { t } = useTranslation();
+  const startIcon = (
+    <AppIcon
+      color={enabled ? colors.accentContrast : colors.textDisabled}
+      name="play"
+      size={sizes.icon.medium}
+    />
+  );
+
+  return (
+    <View style={styles.primaryActionArea}>
+      {confirming ? (
+        <View style={styles.confirmation}>
+          <FeedbackBanner
+            message={t('teams.lockHint')}
+            title={t('teams.lockTitle')}
+            tone="warning"
+          />
+          <View style={styles.startConfirmationActions}>
+            <Button
+              disabled={pending}
+              fullWidth
+              label={t('teams.keepEditing')}
+              onPress={onCancel}
+              variant="secondary"
+            />
+            <Button
+              busy={pending}
+              fullWidth
+              icon={startIcon}
+              label={t('teams.start')}
+              onPress={onConfirm}
+            />
           </View>
-        ))
+        </View>
+      ) : (
+        <Button
+          disabled={!enabled}
+          icon={startIcon}
+          label={t('teams.start')}
+          onPress={onBegin}
+        />
       )}
     </View>
   );
 }
 
-function GuestSection({
-  busy,
-  disabled,
-  draft,
-  open,
-  onChange,
-  onSubmit,
-  onToggle,
+export function MatchCancellationSection({
+  confirming,
+  pending,
+  onBegin,
+  onCancel,
+  onConfirm,
 }: {
-  busy: boolean;
-  disabled: boolean;
-  draft: GuestDraft;
-  open: boolean;
-  onChange(draft: GuestDraft): void;
-  onSubmit(): void;
-  onToggle(): void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <Surface tone="muted" style={styles.guestArea}>
-      <View style={styles.sectionHeading}>
-        <AppText variant="heading">{t('guest.title')}</AppText>
-        <AppText tone="muted">{t('guest.hint')}</AppText>
-      </View>
-      <Button
-        disabled={disabled}
-        label={open ? t('guest.close') : t('guest.add')}
-        onPress={onToggle}
-        variant="secondary"
-      />
-      {open ? (
-        <View style={styles.guestForm}>
-          <TextField
-            autoCapitalize="words"
-            editable={!disabled}
-            label={t('guest.name')}
-            maxLength={120}
-            onChangeText={(name) => onChange({ ...draft, name })}
-            placeholder={t('guest.placeholder')}
-            value={draft.name}
-          />
-          <View>
-            {guestAttributeKeys.map((key) => {
-              const label = t(`attributes.${key}`);
-              return (
-                <NumberStepper
-                  decreaseLabel={t('attributes.decrease', { label })}
-                  disabled={disabled}
-                  increaseLabel={t('attributes.increase', { label })}
-                  key={key}
-                  label={label}
-                  maximum={10}
-                  minimum={1}
-                  onChange={(value) =>
-                    onChange({
-                      ...draft,
-                      attributes: { ...draft.attributes, [key]: value },
-                    })
-                  }
-                  value={draft.attributes[key]}
-                  valueLabel={t('attributes.value', {
-                    label,
-                    value: draft.attributes[key],
-                    maximum: 10,
-                  })}
-                />
-              );
-            })}
-          </View>
-          <Button
-            busy={busy}
-            disabled={disabled}
-            label={t('guest.create')}
-            onPress={onSubmit}
-          />
-        </View>
-      ) : null}
-    </Surface>
-  );
-}
-
-function ProposalEditor({
-  playersById,
-  proposal,
-  selectedSwapPlayerId,
-  wide,
-  onMove,
-  onSelectSwap,
-}: {
-  playersById: Map<string, MatchDetail['participants']['going'][number]>;
-  proposal: TransientTeamProposal;
-  selectedSwapPlayerId: string | null;
-  wide: boolean;
-  onMove(playerId: string): void;
-  onSelectSwap(playerId: string): void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <View style={styles.section}>
-      <View style={styles.proposalHeading}>
-        <View style={styles.sectionHeading}>
-          <AppText variant="eyebrow" tone="brand">
-            {t('teams.current').toUpperCase()}
-          </AppText>
-          <AppText variant="heading">
-            {proposalWasAdjusted(proposal)
-              ? t('teams.adjusted')
-              : t('teams.balanced')}
-          </AppText>
-        </View>
-        <AppText variant="caption" tone="muted">
-          {t('teams.balance', {
-            balance: proposal.balance.balanceScore.toFixed(3),
-            variety: proposal.balance.historyScore.toFixed(3),
-          })}
-        </AppText>
-      </View>
-      {selectedSwapPlayerId ? (
-        <FeedbackBanner
-          tone="info"
-          message={t('teams.selectSwap', {
-            name:
-              playersById.get(selectedSwapPlayerId)?.name ?? t('common.player'),
-          })}
-        />
-      ) : null}
-      <View style={[styles.teamColumns, wide && styles.teamColumnsWide]}>
-        <ProposalTeam
-          ids={proposal.teamAPlayerIds}
-          playersById={playersById}
-          proposal={proposal}
-          selectedSwapPlayerId={selectedSwapPlayerId}
-          side="A"
-          onMove={onMove}
-          onSelectSwap={onSelectSwap}
-        />
-        <ProposalTeam
-          ids={proposal.teamBPlayerIds}
-          playersById={playersById}
-          proposal={proposal}
-          selectedSwapPlayerId={selectedSwapPlayerId}
-          side="B"
-          onMove={onMove}
-          onSelectSwap={onSelectSwap}
-        />
-      </View>
-    </View>
-  );
-}
-
-function ProposalTeam({
-  ids,
-  playersById,
-  proposal,
-  selectedSwapPlayerId,
-  side,
-  onMove,
-  onSelectSwap,
-}: {
-  ids: string[];
-  playersById: Map<string, MatchDetail['participants']['going'][number]>;
-  proposal: TransientTeamProposal;
-  selectedSwapPlayerId: string | null;
-  side: 'A' | 'B';
-  onMove(playerId: string): void;
-  onSelectSwap(playerId: string): void;
+  confirming: boolean;
+  pending: boolean;
+  onBegin(): void;
+  onCancel(): void;
+  onConfirm(): void;
 }) {
   const { colors } = useTheme();
   const { t } = useTranslation();
-  const selectedIsThisSide = selectedSwapPlayerId
-    ? ids.includes(selectedSwapPlayerId)
-    : false;
-
-  return (
-    <Surface padding="none" style={styles.proposalTeam}>
-      <View
-        style={[
-          styles.teamHeading,
-          {
-            backgroundColor:
-              side === 'A' ? colors.teamASurface : colors.teamBSurface,
-          },
-        ]}
-      >
-        <AppText
-          variant="heading"
-          style={{ color: side === 'A' ? colors.teamAText : colors.teamBText }}
-        >
-          {t('common.team', { side })}
-        </AppText>
-        <AppText variant="caption" tone="muted">
-          {t('common.playerCount', { count: ids.length })}
-        </AppText>
+  return confirming ? (
+    <View style={styles.confirmation}>
+      <FeedbackBanner
+        message={t('cancellation.confirmHint')}
+        title={t('cancellation.confirmTitle')}
+        tone="warning"
+      />
+      <View style={styles.confirmationActions}>
+        <Button
+          disabled={pending}
+          fullWidth={false}
+          label={t('cancellation.keep')}
+          onPress={onCancel}
+          variant="secondary"
+        />
+        <Button
+          busy={pending}
+          fullWidth={false}
+          label={t('cancellation.confirm')}
+          onPress={onConfirm}
+          variant="destructive"
+        />
       </View>
-      {ids.map((id) => {
-        const player = playersById.get(id);
-        if (!player) {
-          return null;
-        }
-        const maySwapWithSelection =
-          selectedSwapPlayerId !== null && !selectedIsThisSide;
-        const movingAllowed = canMovePlayer(proposal, id);
-        const selected = selectedSwapPlayerId === id;
-
-        return (
-          <View
-            key={id}
-            style={[
-              styles.proposalPlayerRow,
-              { borderTopColor: colors.border },
-              selected && {
-                backgroundColor: colors.accentSoft,
-              },
-            ]}
-          >
-            <Avatar name={player.name} size="small" url={player.avatarUrl} />
-            <View style={styles.playerName}>
-              <AppText variant="bodyStrong">{player.name}</AppText>
-              {player.type === 'GUEST' ? (
-                <AppText variant="caption" tone="muted">
-                  {t('common.guest')}
-                </AppText>
-              ) : null}
-            </View>
-            <Button
-              fullWidth={false}
-              label={
-                selected
-                  ? t('teams.cancelSwap')
-                  : maySwapWithSelection
-                    ? t('teams.swapHere')
-                    : movingAllowed
-                      ? t('teams.moveTo', {
-                          side: side === 'A' ? 'B' : 'A',
-                        })
-                      : t('teams.selectSwapAction')
-              }
-              onPress={() => {
-                if (selected || maySwapWithSelection || !movingAllowed) {
-                  onSelectSwap(id);
-                } else {
-                  onMove(id);
-                }
-              }}
-              variant="ghost"
-            />
-          </View>
-        );
-      })}
-    </Surface>
+    </View>
+  ) : (
+    <Pressable
+      accessibilityLabel={t('cancellation.title')}
+      accessibilityRole="button"
+      accessibilityState={{ disabled: pending }}
+      disabled={pending}
+      onPress={onBegin}
+      style={({ pressed }) => [
+        styles.cancelAction,
+        { opacity: pending ? 0.55 : pressed ? 0.7 : 1 },
+      ]}
+    >
+      <AppText
+        style={{ color: pending ? colors.textDisabled : colors.danger }}
+        variant="bodyStrong"
+      >
+        {t('cancellation.title')}
+      </AppText>
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  section: { gap: spacing.xl },
-  sectionHeading: { gap: spacing.xs },
-  attendanceCard: { gap: spacing.lg },
-  buttonRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
-  buttonRowEnd: {
+  screenSections: { gap: spacing.md },
+  informationCard: { gap: spacing.sm },
+  informationRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+    minHeight: sizes.compactControl,
+  },
+  informationCopy: { flex: 1, gap: spacing.xxs },
+  attendanceCard: { gap: spacing.sm },
+  participantsCard: { gap: spacing.md },
+  participantGroup: { gap: spacing.xs },
+  participantGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+  participantTile: {
+    alignItems: 'center',
+    borderRadius: radii.md,
+    borderWidth: borderWidths.subtle,
+    flexDirection: 'row',
+    flexGrow: 1,
+    gap: spacing.xs,
+    minHeight: sizes.minimumTouchTarget,
+    minWidth: 144,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: spacing.xs,
+  },
+  participantName: { flex: 1, minWidth: 0 },
+  participantActions: {
+    alignItems: 'stretch',
+    flexDirection: 'row',
+    gap: spacing.xs,
+    justifyContent: 'space-around',
+  },
+  guestForm: { gap: spacing.md, width: '100%' },
+  teamsCard: { gap: spacing.md },
+  teamActions: {
+    alignItems: 'stretch',
+    flexDirection: 'row',
+    gap: spacing.xs,
+    justifyContent: 'space-around',
+  },
+  textAction: {
+    alignItems: 'center',
+    borderRadius: radii.sm,
+    flex: 1,
+    flexDirection: 'row',
+    gap: spacing.xs,
+    justifyContent: 'center',
+    minHeight: sizes.minimumTouchTarget,
+    paddingHorizontal: spacing.xs,
+  },
+  textActionCompact: { flex: 0, minHeight: sizes.compactControl },
+  textActionLabel: { flexShrink: 1, textAlign: 'center' },
+  primaryActionArea: { marginTop: spacing.xs },
+  cancelAction: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: sizes.minimumTouchTarget,
+    width: '100%',
+  },
+  confirmation: { gap: spacing.md },
+  startConfirmationActions: { gap: spacing.sm },
+  confirmationActions: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.sm,
     justifyContent: 'flex-end',
   },
-  participantSurface: { overflow: 'hidden' },
-  participantGroup: {
-    borderBottomWidth: 1,
-    gap: spacing.sm,
-    padding: spacing.lg,
-  },
-  groupHeading: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  participantRow: {
-    alignItems: 'center',
-    borderTopWidth: 1,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-    justifyContent: 'space-between',
-    minHeight: sizes.minimumTouchTarget + 8,
-    paddingVertical: spacing.xs,
-  },
-  playerName: { flex: 1, gap: spacing.xxs, minWidth: 120 },
-  adminRowActions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xxs },
-  guestArea: { gap: spacing.lg },
-  guestForm: { gap: spacing.lg },
-  generationSection: { gap: spacing.lg },
-  proposalHeading: {
-    alignItems: 'flex-end',
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.md,
-    justifyContent: 'space-between',
-  },
-  teamColumns: { gap: spacing.md },
-  teamColumnsWide: { alignItems: 'flex-start', flexDirection: 'row' },
-  proposalTeam: { flex: 1, minWidth: 0, overflow: 'hidden' },
-  teamHeading: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-  },
-  proposalPlayerRow: {
-    alignItems: 'center',
-    borderTopWidth: 1,
-    flexDirection: 'row',
-    gap: spacing.sm,
-    minHeight: 68,
-    paddingLeft: spacing.lg,
-    paddingRight: spacing.xs,
-    paddingVertical: spacing.xxs,
-  },
-  startArea: { gap: spacing.lg },
-  cancelArea: { gap: spacing.lg, marginTop: spacing.xl },
-  confirmation: { gap: spacing.md },
 });

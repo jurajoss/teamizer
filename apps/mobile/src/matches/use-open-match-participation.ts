@@ -74,42 +74,23 @@ export async function updateOwnAttendance(
   await apiClient.removeRegistration(matchId);
 }
 
-export async function updateAttendanceAsAdministrator(
-  apiClient: ParticipationApi,
-  match: MatchDetail,
-  playerId: string,
-  attendance: Attendance,
-): Promise<void> {
-  const isUnanswered = match.participants.unanswered.some(
-    ({ id }) => id === playerId,
-  );
-
-  if (attendance === 'GOING' && isUnanswered) {
-    await apiClient.addParticipant(match.id, { playerId });
-    return;
-  }
-
-  await apiClient.updateParticipant(match.id, playerId, attendance);
-}
-
 export function useOpenMatchParticipation({
   apiClient,
   currentUser,
   match,
-  invalidateProposal,
+  onAttendanceChanged,
   setFeedback,
 }: {
   apiClient: AuthenticatedApiClient;
   currentUser: CurrentUser;
   match: MatchDetail;
-  invalidateProposal(): void;
+  onAttendanceChanged(): void;
   setFeedback: SetOpenMatchFeedback;
 }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [guestOpen, setGuestOpen] = useState(false);
   const [guest, setGuest] = useState<GuestDraft>(emptyGuestDraft);
-
   const refreshMatch = () => refreshMatchState(queryClient, match.id);
   const attendanceMutation = useMutation({
     mutationFn: (attendance: Attendance | null) =>
@@ -120,7 +101,7 @@ export function useOpenMatchParticipation({
         attendance,
       ),
     onSuccess: async () => {
-      invalidateProposal();
+      onAttendanceChanged();
       setFeedback({ tone: 'success', text: t('attendance.updated') });
       await refreshMatch();
     },
@@ -129,32 +110,10 @@ export function useOpenMatchParticipation({
         openMatchErrorFeedback(error, t('attendance.updateFailed'), t),
       ),
   });
-  const participantMutation = useMutation({
-    mutationFn: ({
-      attendance,
-      playerId,
-    }: {
-      attendance: Attendance;
-      playerId: string;
-    }) =>
-      updateAttendanceAsAdministrator(apiClient, match, playerId, attendance),
-    onSuccess: async () => {
-      invalidateProposal();
-      setFeedback({
-        tone: 'success',
-        text: t('attendance.participantUpdated'),
-      });
-      await refreshMatch();
-    },
-    onError: (error) =>
-      setFeedback(
-        openMatchErrorFeedback(error, t('attendance.participantFailed'), t),
-      ),
-  });
   const guestMutation = useMutation({
     mutationFn: () => createGuestParticipant(apiClient, match.id, guest),
     onSuccess: async ({ player }) => {
-      invalidateProposal();
+      onAttendanceChanged();
       setGuest(emptyGuestDraft());
       setGuestOpen(false);
       setFeedback({
@@ -182,12 +141,7 @@ export function useOpenMatchParticipation({
       isPending: attendanceMutation.isPending,
       pendingValue: attendanceMutation.variables,
       update: (attendance: Attendance | null) =>
-        attendanceMutation.mutate(attendance),
-    },
-    participant: {
-      isPending: participantMutation.isPending,
-      update: (playerId: string, attendance: Attendance) =>
-        participantMutation.mutate({ playerId, attendance }),
+        attendanceMutation.mutateAsync(attendance),
     },
     guest: {
       draft: guest,

@@ -4,6 +4,14 @@ export function canAccessPlayerAdministration(role: 'PLAYER' | 'ADMIN') {
   return role === 'ADMIN';
 }
 
+export function canEditPlayerProfile(
+  role: 'PLAYER' | 'ADMIN',
+  currentPlayerId: string,
+  selectedPlayerId: string,
+): boolean {
+  return role === 'ADMIN' || currentPlayerId === selectedPlayerId;
+}
+
 export function canInviteGuest(
   role: 'PLAYER' | 'ADMIN',
   playerType: 'REGULAR' | 'GUEST',

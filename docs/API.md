@@ -41,7 +41,9 @@ Before start, a player may change only their own response. Only an admin may add
 `POST /matches/:id/start` receives selected teams. Backend requires OPEN, validates every GOING player appears exactly once, exactly two non-empty teams, sport rules, then atomically persists final teams/provenance, locks attendance/teams and changes to IN_PROGRESS.
 
 ## In progress
-`GET /matches/:id` returns persisted teams/state. No live scoring endpoints. A user can start local scoring at 0:0.
+`GET /matches/:id` returns persisted teams/state. No live scoring endpoints.
+Opening an IN_PROGRESS Match restores that device's valid local draft or starts
+a new local scoring session at 0:0.
 
 ## Complete
 `POST /matches/:id/complete`
@@ -77,7 +79,12 @@ GET /players/:id/matches
 GET /rankings
 GET /matches/:id
 ```
-Default ranking: win rate desc, matches desc, goals/match desc, goals desc, name asc. Zero-match players last with N/A win rate; only ACTIVE players by default, guests included.
+Default ranking: win rate desc, matches desc, goals/match desc, goals desc, name asc. Zero-match players last with N/A win rate; only ACTIVE players by default, guests included. Statistics summaries also include attendance: distinct FINISHED Matches in which the Player has final Team membership divided by the application-wide FINISHED-Match count. Rankings reuse those counts and percentage without per-Player requests.
+
+`GET /players/:id` is also the screen-level Player profile response. It returns
+only public identity/statistics to PLAYER callers. ADMIN callers receive the
+existing private ratings plus account linkage state (`UNLINKED`, `INVITED`, or
+`REGISTERED`) in that same response; pending invitation email is privileged.
 
 ## Schedule/admin
 Admin APIs configure weekday, local time, timezone, enabled state, sport, location, generation horizon and notification timings. Concrete matches are generated 7 days before start.

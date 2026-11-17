@@ -6,12 +6,18 @@ import { statisticsQueryKeys } from '../statistics/statistics-query-keys';
 import { profileQueryKeys } from './profile-query-keys';
 import {
   convertGuestPlayer,
+  hasAdminAccountInputChanges,
+  hasAdminPlayerDetailsChanged,
   inviteGuestPlayer,
   publishAdminPlayer,
   removeAdminPlayerAvatar,
   updateManagedPlayer,
 } from './use-admin-player-controller';
-import { publishOwnProfile, removeOwnAvatar } from './use-profile-controller';
+import {
+  hasOwnProfileNameChanged,
+  publishOwnProfile,
+  removeOwnAvatar,
+} from './use-profile-controller';
 
 const playerId = '00000000-0000-4000-8000-000000000001';
 
@@ -30,6 +36,11 @@ function playerDetail(): PlayerDetail {
       winRate: 0.5,
       goals: 3,
       goalsPerMatch: 1.5,
+      attendance: {
+        playedMatches: 2,
+        totalMatches: 3,
+        percentage: 67,
+      },
     },
   };
 }
@@ -38,6 +49,7 @@ function adminPlayerDetail(): AdminPlayerDetail {
   return {
     ...playerDetail(),
     type: 'GUEST',
+    account: { state: 'UNLINKED' },
     attributes: {
       speed: 5,
       endurance: 5,
@@ -56,6 +68,12 @@ function queryClient() {
 }
 
 describe('profile behavior seams', () => {
+  it('detects only meaningful unsaved self-profile name changes', () => {
+    expect(hasOwnProfileNameChanged(undefined, 'Ada')).toBe(false);
+    expect(hasOwnProfileNameChanged('Ada', ' Ada ')).toBe(false);
+    expect(hasOwnProfileNameChanged('Ada', 'Grace')).toBe(true);
+  });
+
   it('publishes an own-profile mutation to profile/statistics caches and refreshes identity', async () => {
     const client = queryClient();
     const refreshCurrentUser = vi.fn().mockResolvedValue(undefined);
@@ -70,6 +88,7 @@ describe('profile behavior seams', () => {
     expect(client.invalidateQueries.mock.calls).toEqual([
       [{ queryKey: statisticsQueryKeys.root }],
       [{ queryKey: profileQueryKeys.root }],
+      [{ queryKey: matchQueryKeys.root }],
     ]);
     expect(refreshCurrentUser).toHaveBeenCalledOnce();
   });
@@ -95,6 +114,38 @@ describe('profile behavior seams', () => {
 });
 
 describe('admin Player behavior seams', () => {
+  it('detects unsaved identity or rating changes without conflating status mutations', () => {
+    const player = adminPlayerDetail();
+
+    expect(
+      hasAdminPlayerDetailsChanged(player, player.name, player.attributes),
+    ).toBe(false);
+    expect(
+      hasAdminPlayerDetailsChanged(player, 'Updated', player.attributes),
+    ).toBe(true);
+    expect(
+      hasAdminPlayerDetailsChanged(player, player.name, {
+        ...player.attributes,
+        speed: 6,
+      }),
+    ).toBe(true);
+  });
+
+  it('includes unfinished invitation and advanced identity inputs in exit protection', () => {
+    expect(hasAdminAccountInputChanges('', '', '')).toBe(false);
+    expect(
+      hasAdminAccountInputChanges(
+        'player@example.com',
+        ' PLAYER@EXAMPLE.COM ',
+        '',
+      ),
+    ).toBe(false);
+    expect(hasAdminAccountInputChanges('', 'player@example.com', '')).toBe(
+      true,
+    );
+    expect(hasAdminAccountInputChanges('', '', 'firebase-uid')).toBe(true);
+  });
+
   it('publishes edits to every dependent cache and refreshes identity only for self', async () => {
     const client = queryClient();
     const refreshCurrentUser = vi.fn().mockResolvedValue(undefined);

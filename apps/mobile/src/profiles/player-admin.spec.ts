@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   asyncContentState,
   canAccessPlayerAdministration,
+  canEditPlayerProfile,
   canInviteGuest,
   canSubmitGuestInvitation,
   isValidInvitationEmail,
@@ -14,6 +15,12 @@ describe('Player profile and administration presentation', () => {
   it('keeps Player administration navigation ADMIN-only', () => {
     expect(canAccessPlayerAdministration('ADMIN')).toBe(true);
     expect(canAccessPlayerAdministration('PLAYER')).toBe(false);
+  });
+
+  it('allows identity editing only for the owner or an administrator', () => {
+    expect(canEditPlayerProfile('PLAYER', 'player-1', 'player-1')).toBe(true);
+    expect(canEditPlayerProfile('PLAYER', 'player-1', 'player-2')).toBe(false);
+    expect(canEditPlayerProfile('ADMIN', 'admin', 'player-2')).toBe(true);
   });
 
   it('shows invitation and UID fallback controls only for an ADMIN viewing a Guest', () => {

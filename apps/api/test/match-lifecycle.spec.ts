@@ -661,30 +661,42 @@ describeWithDatabase('Match lifecycle and attendance API', () => {
       .expect(200);
   });
 
-  it('keeps every active Match upcoming while excluding overdue OPEN Matches', async () => {
+  it('uses lifecycle status for visibility across a fixed scheduling timeline', async () => {
     const caller = await createUser('upcoming-caller');
+    const fixedNow = new Date('2020-09-15T18:00:00.000Z');
+    const minute = 60_000;
+    const hour = 60 * minute;
+    const day = 24 * hour;
+    const previousDay = await createMatch({
+      startsAt: new Date(fixedNow.getTime() - day),
+    });
+    const severalHoursOverdue = await createMatch({
+      startsAt: new Date(fixedNow.getTime() - 4 * hour),
+    });
+    const oneMinuteOverdue = await createMatch({
+      startsAt: new Date(fixedNow.getTime() - minute),
+    });
+    const exactlyAtStart = await createMatch({
+      startsAt: fixedNow,
+    });
+    const beforeStart = await createMatch({
+      startsAt: new Date(fixedNow.getTime() + minute),
+    });
     const activePast = await createMatch({
       status: MatchStatus.IN_PROGRESS,
-      startsAt: new Date('2000-09-01T18:30:00.000Z'),
+      startsAt: new Date(fixedNow.getTime() - 2 * day),
     });
-    await createMatch({
-      status: MatchStatus.OPEN_FOR_REGISTRATION,
-      startsAt: new Date('2000-09-02T18:30:00.000Z'),
+    const finished = await createMatch({
+      status: MatchStatus.FINISHED,
+      startsAt: new Date(fixedNow.getTime() - 3 * day),
     });
-    const later = await createMatch({
-      startsAt: new Date('2099-09-02T18:30:00.000Z'),
-    });
-    const sooner = await createMatch({
-      status: MatchStatus.IN_PROGRESS,
-      startsAt: new Date('2099-09-01T18:30:00.000Z'),
-    });
-    await createMatch({
+    const cancelled = await createMatch({
       status: MatchStatus.CANCELLED,
-      startsAt: new Date('2099-08-31T18:30:00.000Z'),
+      startsAt: new Date(fixedNow.getTime() - 4 * day),
     });
     await prisma.matchParticipant.create({
       data: {
-        matchId: later.id,
+        matchId: beforeStart.id,
         playerId: caller.playerId,
         attendance: Attendance.NOT_GOING,
       },
@@ -698,14 +710,79 @@ describeWithDatabase('Match lifecycle and attendance API', () => {
 
     expect(response.body.map(({ id }: { id: string }) => id)).toEqual([
       activePast.id,
-      sooner.id,
-      later.id,
+      previousDay.id,
+      severalHoursOverdue.id,
+      oneMinuteOverdue.id,
+      exactlyAtStart.id,
+      beforeStart.id,
     ]);
     expect(
       response.body.map(
         ({ myAttendance }: { myAttendance: string | null }) => myAttendance,
       ),
-    ).toEqual([null, null, 'NOT_GOING']);
+    ).toEqual([null, null, null, null, null, 'NOT_GOING']);
+
+    const finishedResponse = await request(app.getHttpServer())
+      .get('/matches?status=FINISHED')
+      .set('Authorization', authorization)
+      .expect(200);
+    expect(
+      finishedResponse.body.items.map(({ id }: { id: string }) => id),
+    ).toContain(finished.id);
+
+    const cancelledResponse = await request(app.getHttpServer())
+      .get('/matches?status=CANCELLED')
+      .set('Authorization', authorization)
+      .expect(200);
+    expect(
+      cancelledResponse.body.items.map(({ id }: { id: string }) => id),
+    ).toContain(cancelled.id);
+  });
+
+  it('allows an active ADMIN to start an overdue OPEN Match', async () => {
+    const admin = await createUser('overdue-start-admin', {
+      role: UserRole.ADMIN,
+    });
+    const teammate = await createPlayer('Overdue teammate');
+    const match = await createMatch({
+      startsAt: new Date('2000-09-01T18:30:00.000Z'),
+    });
+    const authorization = authorize(
+      'overdue-start-token',
+      admin.authProviderId,
+    );
+
+    await request(app.getHttpServer())
+      .post(`/matches/${match.id}/registration`)
+      .set('Authorization', authorization)
+      .send({})
+      .expect(200);
+    await request(app.getHttpServer())
+      .post(`/matches/${match.id}/participants`)
+      .set('Authorization', authorization)
+      .send({ playerId: teammate.id })
+      .expect(201);
+    const proposal = await request(app.getHttpServer())
+      .post(`/matches/${match.id}/generate-teams`)
+      .set('Authorization', authorization)
+      .send({})
+      .expect(200);
+
+    const response = await request(app.getHttpServer())
+      .post(`/matches/${match.id}/start`)
+      .set('Authorization', authorization)
+      .send({
+        teamAPlayerIds: proposal.body.teamAPlayerIds,
+        teamBPlayerIds: proposal.body.teamBPlayerIds,
+        proposalReceipt: proposal.body.proposalReceipt,
+      })
+      .expect(200);
+
+    expect(response.body).toMatchObject({
+      id: match.id,
+      startsAt: '2000-09-01T18:30:00.000Z',
+      status: 'IN_PROGRESS',
+    });
   });
 
   it('paginates Match summaries and uses descending order for CANCELLED', async () => {

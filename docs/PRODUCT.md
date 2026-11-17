@@ -73,7 +73,8 @@ Start:
 
 In progress:
 - teams immutable,
-- any player may open the match and start fresh local scoring at 0:0,
+- any active player opening the match enters local scoring directly,
+- a missing device-local draft is created at 0:0; a valid draft is restored,
 - no live synchronization,
 - any player may complete,
 - first successful completion wins.
@@ -144,14 +145,19 @@ Show final Team A players, Team B players, final score and player goal totals. D
 ## Statistics
 Show matches, wins, draws, losses, win rate, goals, goals/match, history, recent teammates/opponents and rankings.
 
-Ranking:
-1. win rate desc
-2. matches desc
-3. goals/match desc
-4. goals desc
-5. name asc
+Rankings expose three descending views over the same finished-Match
+statistics: win rate (default), goals per Match, and participation (Match
+attendance percentage). Participation is final Team membership divided by all
+FINISHED Matches in application history, including Matches before Player
+creation; its secondary value shows played/total counts. The selected view
+controls both the displayed value and the top-three positions. Participation
+ties use played Matches before the remaining rates/counts, total goals, name,
+and Player ID. The default win-rate view retains the established tie-break
+priority: matches, goals per Match, goals, then name.
 
-Zero-match players appear after players with matches and show win rate N/A. Only ACTIVE players included by default; guests included.
+Zero-match players appear after players with matches and show unavailable rates
+as a neutral dash. Only ACTIVE players are included by default; Guests are
+included.
 
 ## MVP
 Authentication, profiles, avatars, persistent guests/conversion, Tuesday matches, attendance, visible unanswered players, participant adjustment, notifications, team generation, history-aware variation, pre-start manual team adjustment, local scoring, durable local state, first-completion-wins, final submission, statistics/rankings/history, responsive phone/tablet UI, portrait/landscape and algorithm tests.

@@ -40,24 +40,22 @@ Server-side authorization follows PRODUCT.md; UI is not a security boundary.
 
 All authenticated mobile routes remain in one Expo Router stack. The shell owns
 one canonical definition of the authenticated primary areas (`/home`,
-`/matches`, `/players`, and `/statistics`) and composes it as bottom navigation
+`/matches`, and `/rankings`) and composes it as bottom navigation
 below the shared 700 px tablet breakpoint or as a left sidebar at and above it.
-Feature screens and authorization rules are shared between modes. Match and
-Player details retain their single canonical `/matches/:matchId` and
-`/players/:playerId` routes; the shell does not create tab-specific copies or
-hold Match lifecycle/scoring state.
+Primary chrome is rendered only on those exact roots. Feature screens and
+authorization rules are shared between modes. Match and Player statistics
+retain their single canonical `/matches/:matchId` and `/players/:playerId`
+routes; `/players/:playerId/matches` provides paginated selected-Player history.
+The shell does not create tab-specific copies or hold Match lifecycle/scoring
+state.
 
 Primary switches use framework pop-to/replace behavior instead of accumulating
 stack entries. Nested workflows use native stack push/Back behavior, with
 canonical-area fallbacks for direct deep-link entry. The shell owns navigation
-safe areas, while `AppScreen` owns content spacing, scrolling, keyboard
-avoidance, and width constraints.
-
-A focused nested workflow may request temporary removal of primary chrome while
-its route is focused. Active local scoring uses this shell contract rather than
-covering the phone bottom navigation or duplicating navigation. Removing the
-chrome also transfers bottom/left physical safe-area ownership back to
-`AppScreen`; leaving scoring restores the normal responsive shell.
+safe areas only on primary roots, while `AppScreen` owns content spacing,
+scrolling, keyboard avoidance, width constraints, and the physical bottom/left
+safe areas on nested routes. Root screens use native headers with the account
+avatar leading; nested screens use native Back without global account access.
 
 ## Match persistence
 Lifecycle:
@@ -71,8 +69,23 @@ no parallel manual-Match model.
 
 Do not add a global DB constraint allowing only one IN_PROGRESS match. Multiple concurrent matches are not a user-facing MVP feature, but the model should not structurally forbid them.
 
+While a Match remains open, the mobile client keeps at most one in-memory
+pre-start team draft per Match in a non-persisted Zustand store. The draft
+contains the generated receipt/provenance, current side memberships, and the
+canonical participant-ID snapshot for which it is valid. Navigation reuses the
+draft, but an application restart intentionally does not. A changed participant
+set leaves the existing draft visible and stale until the user explicitly
+regenerates or reconciles it in the editor. Only Start submits the draft to the
+authoritative backend transaction.
+
 ## Local scoring
 Each device can create its own local scoring state for IN_PROGRESS. No authoritative scorekeeper and no live synchronization. Local state should survive background/navigation/restart where technically possible. Goal entry never calls backend. No recovery/transfer mechanism.
+
+The canonical Match route selects presentation from authoritative lifecycle
+state. An active Player opening an IN_PROGRESS Match enters scoring directly.
+The controller restores a valid device-local draft or durably creates a zeroed
+draft before exposing score controls; there is no intermediate Start-scoring
+screen.
 
 The active scoring presentation consumes the existing scoring-session
 controller and durable draft as read-only inputs plus increment, decrement, and
@@ -98,6 +111,14 @@ Derived from finished matches; raw matches and MatchPlayerStats are source of tr
 mutation can change only its own name and avatar. ADMIN-only serializers and
 mutations expose the five internal balancing attributes; public serializers are
 allowlists and never contain those fields.
+
+Player Statistics is the shared profile entry point for Home, Rankings, and the
+account menu. The owner/ADMIN edit affordance opens one shared editor. Regular
+editing reuses the cached public Player detail; ADMIN editing uses the existing
+privileged Player-detail request, whose account-state projection is selected
+only for ADMIN detail and is not added to Rankings. Existing focused mutations
+remain separate, and successful identity changes invalidate profile,
+statistics, Match, and current-session projections.
 
 Avatar binary data is behind the focused `AvatarStorage` boundary and is never
 stored in PostgreSQL. `AVATAR_STORAGE_DRIVER=local` writes normalized JPEG

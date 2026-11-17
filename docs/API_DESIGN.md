@@ -90,6 +90,13 @@ type PlayerStatisticsSummaryDto = {
   winRate: number | null
   goals: number
   goalsPerMatch: number | null
+  attendance: AttendanceStatsDto
+}
+
+type AttendanceStatsDto = {
+  playedMatches: number
+  totalMatches: number
+  percentage: number | null
 }
 
 type PlayerDetailDto = PlayerPublicDto & {
@@ -233,7 +240,12 @@ attribute-free `PlayerPublicDto` shown above, even when it represents them.
   statistics summary. A PLAYER receives only the public detail shape and
   never receives `attributes`, including for their own Player. An ADMIN
   receives the otherwise identical `AdminPlayerDetailDto`, which includes the
-  complete `attributes` object.
+  complete `attributes` object and a privileged account-state projection:
+  `UNLINKED`, `INVITED` (with invitation email and `PENDING`/`SENT` delivery
+  state), or `REGISTERED`. Account state and invitation email are never present
+  in the PLAYER projection. The ADMIN projection is loaded in the same
+  screen-level request; Rankings retains its public aggregate query and does
+  not load account relations.
 - **404:** unknown Player.
 
 ### `PATCH /players/:playerId`
@@ -362,11 +374,20 @@ cannot create a duplicate User or Player.
   "losses": 4,
   "winRate": 0.5,
   "goals": 23,
-  "goalsPerMatch": 1.9167
+  "goalsPerMatch": 1.9167,
+  "attendance": {
+    "playedMatches": 12,
+    "totalMatches": 20,
+    "percentage": 60
+  }
 }
 ```
 
-For zero matches, `winRate` and `goalsPerMatch` are `null`, not zero.
+For zero played matches, `winRate` and `goalsPerMatch` are `null`, not zero.
+Attendance counts final Team membership against the same application-wide
+FINISHED-Match total for every Player. Its percentage is rounded to the nearest
+integer. When no FINISHED Matches exist, both counts are zero and `percentage`
+is `null`.
 
 ### `GET /players/:playerId/matches`
 
@@ -409,19 +430,18 @@ For zero matches, `winRate` and `goalsPerMatch` are `null`, not zero.
 
 - **Authentication/authorization:** any onboarded User.
 - **Query:** optional `status`, `from`, `to`, `limit`, `cursor`.
-- **Sort:** `startsAt ASC, id ASC` for future/open/in-progress results and
+- **Sort:** `startsAt ASC, id ASC` for open/in-progress results and
   `startsAt DESC, id DESC` when `status=FINISHED` or `CANCELLED` is requested.
 - **200:** paginated match summaries.
 
 ### `GET /matches/upcoming`
 
 - **Authentication/authorization:** any onboarded User.
-- **200:** every `IN_PROGRESS` Match regardless of scheduled time, plus
-  `OPEN_FOR_REGISTRATION` Matches whose `startsAt` is now or later, ordered by
-  `startsAt ASC, id ASC`. Each includes the caller's attendance (`GOING`,
-  `NOT_GOING`, or `null` for unanswered). An overdue open Match remains OPEN
-  and accessible by ID/list, but is no longer presented as upcoming; the MVP
-  does not auto-cancel or expire it.
+- **200:** every `IN_PROGRESS` and `OPEN_FOR_REGISTRATION` Match regardless of
+  scheduled time, ordered by `startsAt ASC, id ASC`. Each includes the caller's
+  attendance (`GOING`, `NOT_GOING`, or `null` for unanswered). Lifecycle status,
+  not the scheduled clock, controls visibility: an overdue open Match remains
+  upcoming and the MVP does not auto-start, auto-cancel, or expire it.
 
 ### `GET /matches/:matchId`
 
@@ -604,10 +624,13 @@ changes because `stateVersion` changes; it remains a client-only proposal.
 - **Sort:** win rate DESC, matches DESC, goals/match DESC, goals DESC, name
   ASC. Zero-match Players sort after Players with matches; guests are included.
 - **200:** paginated ranking rows with rank, Player summary, and statistic
-  summary. `includeInactive=true` is ADMIN-only.
+  summary, including the shared attendance percentage and played/total counts.
+  `includeInactive=true` is ADMIN-only.
 
 Statistics endpoints derive values from FINISHED Match, TeamMembership, and
-MatchPlayerStat rows. They never update or synchronize an in-progress score.
+MatchPlayerStat rows. Attendance uses final Team membership rather than
+registration and includes all historical FINISHED Matches in its denominator.
+They never update or synchronize an in-progress score.
 
 ## Schedule and notification administration
 

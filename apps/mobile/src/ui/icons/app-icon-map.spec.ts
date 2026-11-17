@@ -3,19 +3,31 @@ import { describe, expect, it } from 'vitest';
 import { teamizerIconNames, teamizerIconSymbols } from './app-icon-map';
 
 describe('Teamizer icon mapping', () => {
-  it('owns exactly the icons required by the navigation shell and account menu', () => {
+  it('owns the centralized application icon vocabulary', () => {
     expect(teamizerIconNames).toEqual([
       'home',
       'matches',
       'players',
-      'statistics',
+      'rankings',
       'back',
       'account',
       'settings',
       'administration',
       'logout',
+      'add',
       'remove',
       'complete',
+      'next',
+      'location',
+      'edit',
+      'decline',
+      'trophy',
+      'football',
+      'history',
+      'regenerate',
+      'play',
+      'drag',
+      'swap',
     ]);
     expect(Object.keys(teamizerIconSymbols).sort()).toEqual(
       [...teamizerIconNames].sort(),
@@ -30,5 +42,13 @@ describe('Teamizer icon mapping', () => {
         web: expect.any(String),
       });
     }
+  });
+
+  it('maps recent wins to the cross-platform history symbol', () => {
+    expect(teamizerIconSymbols.history).toEqual({
+      ios: 'clock.arrow.circlepath',
+      android: 'history',
+      web: 'history',
+    });
   });
 });

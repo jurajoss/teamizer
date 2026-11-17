@@ -65,6 +65,11 @@ export const upcomingMatchSchema = matchSummarySchema.extend({
 
 export const upcomingMatchesSchema = z.array(upcomingMatchSchema);
 
+export const matchesPageSchema = z.object({
+  items: z.array(matchSummarySchema),
+  nextCursor: z.string().nullable(),
+});
+
 export const adminSportsSchema = z.array(sportSummarySchema);
 
 export const createManualMatchInputSchema = z
@@ -108,6 +113,12 @@ export const generatedScheduledMatchSchema = z.object({
   created: z.boolean(),
 });
 
+export const attendanceStatisticsSchema = z.object({
+  playedMatches: z.number().int().nonnegative(),
+  totalMatches: z.number().int().nonnegative(),
+  percentage: z.number().int().min(0).max(100).nullable(),
+});
+
 export const playerStatisticsSummarySchema = z.object({
   matches: z.number().int().nonnegative(),
   wins: z.number().int().nonnegative(),
@@ -116,6 +127,7 @@ export const playerStatisticsSummarySchema = z.object({
   winRate: z.number().min(0).max(1).nullable(),
   goals: z.number().int().nonnegative(),
   goalsPerMatch: z.number().nonnegative().nullable(),
+  attendance: attendanceStatisticsSchema,
 });
 
 export const playerStatisticsSchema = playerStatisticsSummarySchema.extend({
@@ -126,8 +138,19 @@ export const playerDetailSchema = playerPublicSchema.extend({
   statistics: playerStatisticsSummarySchema,
 });
 
+export const adminPlayerAccountSchema = z.discriminatedUnion('state', [
+  z.object({ state: z.literal('UNLINKED') }),
+  z.object({
+    state: z.literal('INVITED'),
+    email: z.email(),
+    invitationStatus: z.enum(['PENDING', 'SENT']),
+  }),
+  z.object({ state: z.literal('REGISTERED') }),
+]);
+
 export const adminPlayerDetailSchema = playerDetailSchema.extend({
   attributes: playerAttributesInputSchema,
+  account: adminPlayerAccountSchema,
 });
 
 export const playersPageSchema = z.object({
@@ -331,12 +354,14 @@ export const onboardingInputSchema = z
   .strict();
 
 export type CurrentUser = z.infer<typeof currentUserResponseSchema>;
+export type PlayerPublic = z.infer<typeof playerPublicSchema>;
 export type OnboardingInput = z.infer<typeof onboardingInputSchema>;
 export type MatchDetail = z.infer<typeof matchDetailSchema>;
 export type MatchTeam = NonNullable<MatchDetail['teams']>[number];
 export type CompleteMatchInput = z.infer<typeof completeMatchInputSchema>;
 export type Attendance = z.infer<typeof attendanceSchema>;
 export type UpcomingMatch = z.infer<typeof upcomingMatchSchema>;
+export type MatchesPage = z.infer<typeof matchesPageSchema>;
 export type SportSummary = z.infer<typeof sportSummarySchema>;
 export type MatchSummary = z.infer<typeof matchSummarySchema>;
 export type CreateManualMatchInput = z.infer<

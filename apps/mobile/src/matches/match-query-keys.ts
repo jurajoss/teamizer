@@ -6,6 +6,7 @@ import { statisticsQueryKeys } from '../statistics/statistics-query-keys';
 export const matchQueryKeys = {
   root: ['matches'] as const,
   upcoming: ['matches', 'upcoming'] as const,
+  finished: ['matches', 'finished'] as const,
   detail: (matchId: string) => ['matches', 'detail', matchId] as const,
 };
 
@@ -39,6 +40,10 @@ export async function publishMatchState(
     refetchType: 'active',
   });
   if (match.status === 'FINISHED') {
+    await queryClient.invalidateQueries({
+      queryKey: matchQueryKeys.finished,
+      refetchType: 'active',
+    });
     await queryClient.invalidateQueries({
       queryKey: statisticsQueryKeys.root,
       refetchType: 'active',

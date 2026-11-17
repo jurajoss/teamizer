@@ -6,6 +6,7 @@ import {
   canShowAdminMatchControls,
   canSubmitStart,
   createTransientProposal,
+  editParticipantsRouteFor,
   isStaleProposalConflict,
   movePlayer,
   matchRouteFor,
@@ -96,6 +97,31 @@ describe('Match flow state', () => {
     ).toMatchObject({ id: ids.b, status: 'IN_PROGRESS' });
     expect(primaryUpcomingMatch([])).toBeNull();
     expect(matchRouteFor(ids.match)).toBe(`/matches/${ids.match}`);
+    expect(editParticipantsRouteFor(ids.match)).toBe(
+      `/matches/${ids.match}/edit-participants`,
+    );
+  });
+
+  it('selects the earliest OPEN Match without treating an overdue time as expired', () => {
+    const summary = {
+      ...openMatch(),
+      participants: undefined,
+      teams: undefined,
+      provenance: undefined,
+      result: undefined,
+    };
+    const overdue = {
+      ...summary,
+      id: ids.b,
+      startsAt: '2026-08-29T16:30:00.000Z',
+    };
+    const future = {
+      ...summary,
+      id: ids.c,
+      startsAt: '2026-09-01T16:30:00.000Z',
+    };
+
+    expect(primaryUpcomingMatch([future, overdue])).toBe(overdue);
   });
 
   it('rejects duplicate participant data while preserving guest identity', () => {

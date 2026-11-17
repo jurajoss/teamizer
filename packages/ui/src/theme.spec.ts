@@ -87,6 +87,45 @@ describe('Teamizer visual foundation', () => {
     }
   });
 
+  it('provides distinct theme-aware gold, silver, and bronze medal colors', () => {
+    expect({
+      bronze: lightColors.medalBronze,
+      gold: lightColors.medalGold,
+      number: lightColors.medalNumber,
+      silver: lightColors.medalSilver,
+    }).toEqual({
+      bronze: '#A56843',
+      gold: '#996E09',
+      number: '#FFFFFF',
+      silver: '#6B7973',
+    });
+    expect({
+      bronze: darkColors.medalBronze,
+      gold: darkColors.medalGold,
+      number: darkColors.medalNumber,
+      silver: darkColors.medalSilver,
+    }).toEqual({
+      bronze: '#D88A5B',
+      gold: '#E2B84B',
+      number: '#0D1712',
+      silver: '#AEBBB6',
+    });
+
+    for (const colors of [lightColors, darkColors]) {
+      const medals = [colors.medalGold, colors.medalSilver, colors.medalBronze];
+
+      expect(new Set(medals).size).toBe(3);
+      for (const medal of medals) {
+        expect(
+          contrastRatio(medal, colors.surfaceElevated),
+        ).toBeGreaterThanOrEqual(3);
+        expect(contrastRatio(colors.medalNumber, medal)).toBeGreaterThanOrEqual(
+          4.5,
+        );
+      }
+    }
+  });
+
   it('provides subdued semantic team borders against cards and score surfaces', () => {
     for (const colors of [lightColors, darkColors]) {
       for (const team of [

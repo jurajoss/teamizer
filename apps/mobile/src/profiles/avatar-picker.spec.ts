@@ -200,6 +200,11 @@ describe('native avatar preparation', () => {
             winRate: null,
             goals: 0,
             goalsPerMatch: null,
+            attendance: {
+              playedMatches: 0,
+              totalMatches: 0,
+              percentage: null,
+            },
           },
         }),
         { status: 200, headers: { 'Content-Type': 'application/json' } },

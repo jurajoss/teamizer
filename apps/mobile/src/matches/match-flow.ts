@@ -31,13 +31,47 @@ const staleProposalConflictCodes = new Set([
 export function primaryUpcomingMatch(
   matches: UpcomingMatch[],
 ): UpcomingMatch | null {
-  return (
-    matches.find(({ status }) => status === 'IN_PROGRESS') ?? matches[0] ?? null
-  );
+  return matches.reduce<UpcomingMatch | null>((selected, match) => {
+    if (!isUpcomingStatus(match.status)) return selected;
+    if (!selected) return match;
+
+    return comparePrimaryMatches(match, selected) < 0 ? match : selected;
+  }, null);
+}
+
+function isUpcomingStatus(status: UpcomingMatch['status']): boolean {
+  return status === 'OPEN_FOR_REGISTRATION' || status === 'IN_PROGRESS';
+}
+
+function comparePrimaryMatches(
+  left: UpcomingMatch,
+  right: UpcomingMatch,
+): number {
+  const statusComparison =
+    Number(left.status !== 'IN_PROGRESS') -
+    Number(right.status !== 'IN_PROGRESS');
+  if (statusComparison !== 0) return statusComparison;
+
+  const startsAtComparison = left.startsAt.localeCompare(right.startsAt);
+  return startsAtComparison !== 0
+    ? startsAtComparison
+    : left.id.localeCompare(right.id);
 }
 
 export function matchRouteFor(matchId: string): `/matches/${string}` {
   return `/matches/${matchId}`;
+}
+
+export function editTeamsRouteFor(
+  matchId: string,
+): `/matches/${string}/edit-teams` {
+  return `/matches/${matchId}/edit-teams`;
+}
+
+export function editParticipantsRouteFor(
+  matchId: string,
+): `/matches/${string}/edit-participants` {
+  return `/matches/${matchId}/edit-participants`;
 }
 
 export function formatMatchDate(value: string, locale?: string): string {

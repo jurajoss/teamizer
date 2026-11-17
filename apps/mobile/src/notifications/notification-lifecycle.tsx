@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 import { useEffect } from 'react';
 
+import { matchRouteFor } from '../matches/match-flow';
 import { useAppServices } from '../providers/app-services-context';
 import { useSession } from '../session/session-context';
 
@@ -18,7 +19,7 @@ export function NotificationLifecycle() {
   useEffect(
     () =>
       notificationRegistration.subscribeToMatchResponses((matchId) => {
-        router.push({ pathname: '/matches/[matchId]', params: { matchId } });
+        router.push(matchRouteFor(matchId));
       }),
     [notificationRegistration, router],
   );

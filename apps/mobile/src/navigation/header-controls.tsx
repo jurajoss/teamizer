@@ -5,9 +5,38 @@ import { useTranslation } from 'react-i18next';
 import { AppText, radii, sizes, spacing, useTheme } from '@teamizer/ui';
 
 import { AppIcon } from '../ui/icons/app-icon';
+import type { TeamizerIconName } from '../ui/icons/app-icon-map';
 import { nestedBackFallback } from './header-policy';
 
-export function HeaderBackButton() {
+export function HeaderIconAction({
+  icon,
+  label,
+  onPress,
+}: {
+  icon: TeamizerIconName;
+  label: string;
+  onPress(): void;
+}) {
+  const { colors } = useTheme();
+
+  return (
+    <Pressable
+      accessibilityLabel={label}
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.iconAction,
+        {
+          backgroundColor: pressed ? colors.surfaceSubtle : 'transparent',
+        },
+      ]}
+    >
+      <AppIcon color={colors.textPrimary} name={icon} size={sizes.icon.large} />
+    </Pressable>
+  );
+}
+
+export function HeaderBackButton({ fallback }: { fallback?: Href } = {}) {
   const { colors } = useTheme();
   const { t } = useTranslation();
   const pathname = usePathname();
@@ -18,7 +47,7 @@ export function HeaderBackButton() {
       return;
     }
 
-    router.replace(nestedBackFallback(pathname) as Href);
+    router.replace(fallback ?? (nestedBackFallback(pathname) as Href));
   };
 
   return (
@@ -43,6 +72,13 @@ export function HeaderBackButton() {
 }
 
 const styles = StyleSheet.create({
+  iconAction: {
+    alignItems: 'center',
+    borderRadius: radii.pill,
+    height: sizes.minimumTouchTarget,
+    justifyContent: 'center',
+    width: sizes.minimumTouchTarget,
+  },
   button: {
     alignItems: 'center',
     borderRadius: radii.sm,

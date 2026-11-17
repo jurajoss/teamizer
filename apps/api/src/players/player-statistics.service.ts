@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
   MatchStatus,
+  PlayerInvitationStatus,
   PlayerStatus,
   Prisma,
   TeamSide,
@@ -13,6 +14,7 @@ import { ApiError } from '../common/errors/api-error';
 import { PrismaService } from '../prisma/prisma.service';
 import type {
   AdminPlayerDetailDto,
+  AttendanceStatsDto,
   PaginationQueryDto,
   PlayerDetailDto,
   PlayerMatchHistoryItemDto,
@@ -57,8 +59,18 @@ const statisticsPlayerSelect = Prisma.validator<Prisma.PlayerSelect>()({
   },
 });
 
+const adminStatisticsPlayerSelect = Prisma.validator<Prisma.PlayerSelect>()({
+  ...statisticsPlayerSelect,
+  user: { select: { id: true } },
+  invitation: { select: { email: true, status: true } },
+});
+
 type StatisticsPlayer = Prisma.PlayerGetPayload<{
   select: typeof statisticsPlayerSelect;
+}>;
+
+type AdminStatisticsPlayer = Prisma.PlayerGetPayload<{
+  select: typeof adminStatisticsPlayerSelect;
 }>;
 
 const historyMembershipSelect = Prisma.validator<Prisma.TeamMembershipSelect>()(
@@ -122,25 +134,26 @@ export class PlayerStatisticsService {
     playerId: string,
     actor: AuthenticatedUser,
   ): Promise<PlayerDetailDto | AdminPlayerDetailDto> {
-    const player = await this.loadPlayer(playerId);
-    const statistics = this.summarize(player);
-
     if (actor.role === UserRole.ADMIN) {
+      const [player, totalMatches] =
+        await this.loadAdminStatisticsSnapshot(playerId);
       return {
         ...mapAdminPlayer(player, (key) => this.avatars.urlFor(key)),
-        statistics,
+        account: adminAccount(player),
+        statistics: this.summarize(player, totalMatches),
       };
     }
 
+    const [player, totalMatches] = await this.loadStatisticsSnapshot(playerId);
     return {
       ...mapPlayerPublic(player, (key) => this.avatars.urlFor(key)),
-      statistics,
+      statistics: this.summarize(player, totalMatches),
     };
   }
 
   async statistics(playerId: string): Promise<PlayerStatisticsDto> {
-    const player = await this.loadPlayer(playerId);
-    return { playerId, ...this.summarize(player) };
+    const [player, totalMatches] = await this.loadStatisticsSnapshot(playerId);
+    return { playerId, ...this.summarize(player, totalMatches) };
   }
 
   async rankings(
@@ -162,12 +175,21 @@ export class PlayerStatisticsService {
       includeInactive ? 'all' : 'active',
     );
     const limit = query.limit ?? DEFAULT_PAGE_SIZE;
-    const players = await this.prisma.player.findMany({
-      where: includeInactive ? {} : { status: PlayerStatus.ACTIVE },
-      select: statisticsPlayerSelect,
-    });
+    const [players, totalMatches] = await this.prisma.$transaction(
+      [
+        this.prisma.player.findMany({
+          where: includeInactive ? {} : { status: PlayerStatus.ACTIVE },
+          select: statisticsPlayerSelect,
+        }),
+        this.prisma.match.count({ where: { status: MatchStatus.FINISHED } }),
+      ],
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
     const ordered = players
-      .map((player) => ({ player, statistics: this.summarize(player) }))
+      .map((player) => ({
+        player,
+        statistics: this.summarize(player, totalMatches),
+      }))
       .sort(compareRankingCandidates);
     const page = ordered.slice(offset, offset + limit);
 
@@ -217,17 +239,46 @@ export class PlayerStatisticsService {
     };
   }
 
-  private async loadPlayer(playerId: string): Promise<StatisticsPlayer> {
-    const player = await this.prisma.player.findUnique({
-      where: { id: playerId },
-      select: statisticsPlayerSelect,
-    });
+  private async loadStatisticsSnapshot(
+    playerId: string,
+  ): Promise<[StatisticsPlayer, number]> {
+    const [player, totalMatches] = await this.prisma.$transaction(
+      [
+        this.prisma.player.findUnique({
+          where: { id: playerId },
+          select: statisticsPlayerSelect,
+        }),
+        this.prisma.match.count({ where: { status: MatchStatus.FINISHED } }),
+      ],
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
 
     if (!player) {
       throw this.notFound();
     }
 
-    return player;
+    return [player, totalMatches];
+  }
+
+  private async loadAdminStatisticsSnapshot(
+    playerId: string,
+  ): Promise<[AdminStatisticsPlayer, number]> {
+    const [player, totalMatches] = await this.prisma.$transaction(
+      [
+        this.prisma.player.findUnique({
+          where: { id: playerId },
+          select: adminStatisticsPlayerSelect,
+        }),
+        this.prisma.match.count({ where: { status: MatchStatus.FINISHED } }),
+      ],
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
+
+    if (!player) {
+      throw this.notFound();
+    }
+
+    return [player, totalMatches];
   }
 
   private async requirePlayer(playerId: string): Promise<void> {
@@ -238,15 +289,22 @@ export class PlayerStatisticsService {
     if (!player) throw this.notFound();
   }
 
-  private summarize(player: StatisticsPlayer): PlayerStatisticsSummaryDto {
-    const matchIds = new Set(
-      player.teamMemberships.map(({ matchId }) => matchId),
+  private summarize(
+    player: StatisticsPlayer,
+    totalMatches: number,
+  ): PlayerStatisticsSummaryDto {
+    const membershipsByMatch = new Map(
+      player.teamMemberships.map((membership) => [
+        membership.matchId,
+        membership,
+      ]),
     );
+    const matchIds = new Set(membershipsByMatch.keys());
     let wins = 0;
     let draws = 0;
     let losses = 0;
 
-    for (const membership of player.teamMemberships) {
+    for (const membership of membershipsByMatch.values()) {
       const { teamAScore, teamBScore } = membership.team.match;
       if (teamAScore === null || teamBScore === null) {
         throw new Error('A FINISHED Match is missing its authoritative score.');
@@ -257,7 +315,7 @@ export class PlayerStatisticsService {
       else losses += 1;
     }
 
-    const matches = player.teamMemberships.length;
+    const matches = matchIds.size;
     const goals = player.matchPlayerStats.reduce(
       (total, stat) => total + (matchIds.has(stat.matchId) ? stat.goals : 0),
       0,
@@ -271,6 +329,7 @@ export class PlayerStatisticsService {
       winRate: matches === 0 ? null : roundedRate(wins, matches),
       goals,
       goalsPerMatch: matches === 0 ? null : roundedRate(goals, matches),
+      attendance: buildAttendanceStats(matchIds, totalMatches),
     };
   }
 
@@ -353,6 +412,51 @@ export class PlayerStatisticsService {
       'The requested Player does not exist.',
     );
   }
+}
+
+function adminAccount(
+  player: Pick<AdminStatisticsPlayer, 'invitation' | 'user'>,
+): AdminPlayerDetailDto['account'] {
+  if (
+    player.user ||
+    player.invitation?.status === PlayerInvitationStatus.ACCEPTED
+  ) {
+    return { state: 'REGISTERED' };
+  }
+
+  if (
+    player.invitation?.status === PlayerInvitationStatus.PENDING ||
+    player.invitation?.status === PlayerInvitationStatus.SENT
+  ) {
+    return {
+      state: 'INVITED',
+      email: player.invitation.email,
+      invitationStatus: player.invitation.status,
+    };
+  }
+
+  return { state: 'UNLINKED' };
+}
+
+export function buildAttendanceStats(
+  playedMatchIds: Iterable<string>,
+  totalMatches: number,
+): AttendanceStatsDto {
+  const playedMatches = new Set(playedMatchIds).size;
+  if (playedMatches > totalMatches) {
+    throw new Error(
+      'Player attendance cannot exceed the total number of FINISHED Matches.',
+    );
+  }
+
+  return {
+    playedMatches,
+    totalMatches,
+    percentage:
+      totalMatches === 0
+        ? null
+        : Math.round((playedMatches / totalMatches) * 100),
+  };
 }
 
 export type RankingCandidate = {

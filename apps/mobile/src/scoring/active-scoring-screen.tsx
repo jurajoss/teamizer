@@ -30,7 +30,6 @@ import { AppIcon } from '../ui/icons/app-icon';
 import type { LocalMatchDraftV1 } from './local-match-draft';
 import {
   SCORING_PLAYER_TILE_MIN_HEIGHT,
-  SCORING_SCORE_PANEL_MIN_HEIGHT,
   SCORING_SCOREBOARD_PHONE_MAX_WIDTH,
   SCORING_STICKY_SCORE_INDEX,
 } from './scoring-layout';
@@ -39,10 +38,10 @@ import {
   activateScoringPlayerTile,
   scoringGridRows,
   scoringPlayerTileModel,
-  scoringScorePanelPresentation,
   scoringTeamColorRoles,
   type ScoringPlayer,
 } from './scoring-screen-model';
+import { ScoringScorePanel } from './scoring-score-panel';
 import type { ScoringSessionNotice } from './scoring-session-controller';
 import { scoringNoticeTranslationKey } from './scoring-session-presentation';
 
@@ -65,7 +64,7 @@ export function ActiveScoringScreen({
   const [confirming, setConfirming] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const pending = draft.completion.state === 'PENDING';
-  const noticeKey = scoringNoticeTranslationKey(notice, pending);
+  const noticeKey = scoringNoticeTranslationKey(notice);
 
   const finish = async () => {
     setFinishing(true);
@@ -88,10 +87,7 @@ export function ActiveScoringScreen({
       <StickyMatchScore score={draft.score} />
       <View style={styles.scoringContent}>
         {noticeKey ? (
-          <FeedbackBanner
-            message={t(noticeKey)}
-            tone={pending ? 'warning' : 'info'}
-          />
+          <FeedbackBanner message={t(noticeKey)} tone="warning" />
         ) : null}
         <ScoringPlayerGrid
           disabled={pending}
@@ -100,41 +96,86 @@ export function ActiveScoringScreen({
           onAddGoal={onAddGoal}
           onRemoveGoal={onRemoveGoal}
         />
-        <View style={styles.completionArea}>
-          {confirming && !pending ? (
-            <View style={styles.confirmation}>
-              <FeedbackBanner
-                message={t('match.authoritativeResult', {
-                  score: `${draft.score.teamA}–${draft.score.teamB}`,
-                })}
-                title={t('match.submitResult')}
-                tone="warning"
-              />
-              <View style={styles.buttonRow}>
-                <Button
-                  disabled={finishing}
-                  fullWidth={false}
-                  label={t('common.cancel')}
-                  onPress={() => setConfirming(false)}
-                  variant="secondary"
-                />
-                <CompletionButton
-                  busy={finishing}
-                  label={t('match.confirmFinish')}
-                  onPress={() => void finish()}
-                />
-              </View>
-            </View>
-          ) : (
-            <CompletionButton
-              busy={finishing}
-              label={pending ? t('match.retryCompletion') : t('match.finish')}
-              onPress={() => (pending ? void finish() : setConfirming(true))}
-            />
-          )}
-        </View>
+        <ScoringCompletionAction
+          busy={finishing}
+          confirming={confirming}
+          pending={pending}
+          score={draft.score}
+          onBegin={() => setConfirming(true)}
+          onConfirm={() => void finish()}
+          onContinue={() => setConfirming(false)}
+        />
       </View>
     </AppScreen>
+  );
+}
+
+export function ScoringCompletionAction({
+  busy,
+  confirming,
+  pending,
+  score,
+  onBegin,
+  onConfirm,
+  onContinue,
+}: {
+  busy: boolean;
+  confirming: boolean;
+  pending: boolean;
+  score: LocalMatchDraftV1['score'];
+  onBegin(): void;
+  onConfirm(): void;
+  onContinue(): void;
+}) {
+  const { colors } = useTheme();
+  const { t } = useTranslation();
+  const completionIcon = (
+    <AppIcon
+      color={colors.accentContrast}
+      name="complete"
+      size={sizes.icon.medium}
+    />
+  );
+
+  return (
+    <View style={styles.completionArea}>
+      {confirming && !pending ? (
+        <View style={styles.confirmation}>
+          <FeedbackBanner
+            message={t('match.authoritativeResult', {
+              teamA: score.teamA,
+              teamB: score.teamB,
+            })}
+            title={t('match.submitResult')}
+            tone="warning"
+          />
+          <View style={styles.completionConfirmationActions}>
+            <Button
+              disabled={busy}
+              fullWidth
+              label={t('match.continueMatch')}
+              onPress={onContinue}
+              variant="secondary"
+            />
+            <Button
+              busy={busy}
+              fullWidth
+              icon={completionIcon}
+              label={t('match.confirmFinish')}
+              onPress={onConfirm}
+            />
+          </View>
+        </View>
+      ) : (
+        <Button
+          busy={busy}
+          fullWidth
+          icon={completionIcon}
+          label={pending ? t('match.retryCompletion') : t('match.finish')}
+          onPress={pending ? onConfirm : onBegin}
+        />
+      )}
+    </View>
   );
 }
 
@@ -158,55 +199,6 @@ function StickyMatchScore({ score }: { score: LocalMatchDraftV1['score'] }) {
         </AppText>
         <ScoringScorePanel score={score.teamB} side="B" />
       </View>
-    </View>
-  );
-}
-
-function ScoringScorePanel({
-  score,
-  side,
-}: {
-  score: number;
-  side: 'A' | 'B';
-}) {
-  const { colors } = useTheme();
-  const { t } = useTranslation();
-  const colorRoles = scoringTeamColorRoles(side);
-  const presentation = scoringScorePanelPresentation(side);
-  const border = colors[colorRoles.border];
-
-  return (
-    <View
-      style={[
-        styles.scorePanel,
-        presentation.accentEdge === 'left'
-          ? styles.scorePanelAccentLeft
-          : styles.scorePanelAccentRight,
-        {
-          backgroundColor: colors[colorRoles.pressedSurface],
-          borderColor: border,
-        },
-      ]}
-    >
-      <TeamTintBackground
-        direction={presentation.gradientDirection}
-        emphasis="prominent"
-        side={side}
-        style={styles.scoreTintLayer}
-      />
-      <TeamTintAccent
-        edge={presentation.accentEdge}
-        radius={radii.md}
-        side={side}
-        tone="subdued"
-      />
-      <AppText
-        accessibilityLabel={`${t('common.team', { side })}, ${score}`}
-        style={{ color: colors[colorRoles.accent] }}
-        variant="scoreCompact"
-      >
-        {score}
-      </AppText>
     </View>
   );
 }
@@ -484,34 +476,6 @@ function EmptyScoringGridSlot() {
   );
 }
 
-function CompletionButton({
-  busy,
-  label,
-  onPress,
-}: {
-  busy: boolean;
-  label: string;
-  onPress(): void;
-}) {
-  const { colors } = useTheme();
-
-  return (
-    <Button
-      busy={busy}
-      fullWidth={false}
-      icon={
-        <AppIcon
-          color={colors.accentContrast}
-          name="complete"
-          size={sizes.icon.medium}
-        />
-      }
-      label={label}
-      onPress={onPress}
-    />
-  );
-}
-
 const styles = StyleSheet.create({
   screen: { paddingTop: 0 },
   stickyScore: {
@@ -527,29 +491,6 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   scoreboardPhone: { maxWidth: SCORING_SCOREBOARD_PHONE_MAX_WIDTH },
-  scorePanel: {
-    alignItems: 'center',
-    borderRadius: radii.md,
-    borderWidth: borderWidths.subtle,
-    flex: 1,
-    justifyContent: 'center',
-    minHeight: SCORING_SCORE_PANEL_MIN_HEIGHT,
-    overflow: 'hidden',
-    paddingHorizontal: spacing.sm,
-  },
-  scorePanelAccentLeft: {
-    paddingLeft: spacing.sm + spacing.xxs - borderWidths.subtle,
-  },
-  scorePanelAccentRight: {
-    paddingRight: spacing.sm + spacing.xxs - borderWidths.subtle,
-  },
-  scoreTintLayer: {
-    borderRadius: radii.md - borderWidths.subtle,
-    bottom: borderWidths.subtle,
-    left: borderWidths.subtle,
-    right: borderWidths.subtle,
-    top: borderWidths.subtle,
-  },
   scoringContent: { gap: spacing.lg, paddingTop: spacing.xs },
   playerGrid: { gap: spacing.xxs },
   playerGridTablet: { gap: spacing.xs },
@@ -647,19 +588,13 @@ const styles = StyleSheet.create({
   },
   emptyGridSlot: { flex: 1 },
   completionArea: {
-    alignItems: 'center',
     paddingBottom: spacing.lg,
     paddingTop: spacing.md,
+    width: '100%',
   },
   confirmation: {
     gap: spacing.md,
-    maxWidth: layout.formMaxWidth,
     width: '100%',
   },
-  buttonRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-    justifyContent: 'center',
-  },
+  completionConfirmationActions: { gap: spacing.sm },
 });
